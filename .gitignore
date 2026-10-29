@@ -1,0 +1,23 @@
+/bin/
+/obj/
+/artifacts/
+/local/
+/.private/
+/BepInEx/
+/Koikatu_Data/
+/Koikatsu Party_Data/
+/UserData/
+/captures/
+/catalog.json
+__pycache__/
+.pytest_cache/
+.vs/
+.idea/
+*.user
+*.suo
+*.dll
+*.exe
+*.pdb
+*.mdb
+*.cfg
+*.log

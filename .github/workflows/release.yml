@@ -1,0 +1,91 @@
+name: Build and release
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2022
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Restore locked dependencies
+        run: dotnet restore KK_StoryNPCBridge.csproj --locked-mode
+      - name: Build plugin
+        run: dotnet build KK_StoryNPCBridge.csproj --no-restore --configuration Release --output artifacts/build
+      - name: Validate and package
+        id: package
+        shell: pwsh
+        run: |
+          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { '' }
+          $package = ./tools/package-release.ps1 -Tag $tag
+          "version=$($package.Version)" >> $env:GITHUB_OUTPUT
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-package
+          path: artifacts/release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-package
+          path: release
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd release
+          sha256sum --check SHA256SUMS.txt
+          cat > notes.md <<'NOTES'
+          A BepInEx 5 bridge for native story-mode NPC control through a local API.
+
+          This version injects one new bridge character (`bridge:main`). Only this character can currently be controlled. Existing NPC targeting is planned.
+
+          - Manual or external application control of stats, expressions, actions, navigation and native ADV dialogue.
+          - Native AI resumes on release or disconnect, with activity reports returned on the next claim.
+          - English API documentation and an optional Simplified Chinese plugin UI.
+
+          Install BepInEx 5, then copy `KK_StoryNPCBridge.dll` into `BepInEx/plugins`, or extract the ZIP into the game directory. Koikatsu Party requires purchasing the After Party DLC and installing the patch from the official website.
+
+          See the English README, Chinese README, API reference and ID reference in the repository. Model access, prompts and decisions belong to external applications. Licensed under MIT.
+          NOTES
+          if gh release view "$RELEASE_TAG" --json isDraft > existing.json 2>/dev/null; then
+            if [ "$(jq -r .isDraft existing.json)" != true ]; then
+              echo 'Release is already published; refusing to replace its assets.' >&2
+              exit 1
+            fi
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "KK_StoryNPCBridge $RELEASE_VERSION" --notes-file notes.md
+          fi
+          gh release upload "$RELEASE_TAG" KK_StoryNPCBridge.dll "KK_StoryNPCBridge-$RELEASE_VERSION.zip" SHA256SUMS.txt --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest
