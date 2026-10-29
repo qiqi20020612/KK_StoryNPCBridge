@@ -108,11 +108,11 @@ with BridgeClient(game_root="<Koikatu 游戏目录>") as bridge:
 
 ## 文档
 
-- [API 参考（英文）](API.md)：通信协议、命令、控制权、返回值、行动报告与对话事件。
-- [编号参考（英文）](docs/REFERENCE.md)：行动、地图、表情分组和 Animator 状态。
+- [API 参考](API.zh-CN.md)（[English](API.md)）：通信协议、命令、控制权、返回值、行动报告与对话事件。
+- [编号参考](docs/REFERENCE.zh-CN.md)（[English](docs/REFERENCE.md)）：行动、地图、表情分组和 Animator 状态。
 - `catalog`：以游戏当前加载的模型、内容和状态为准的运行时目录。
 
-接口文档统一以英文维护；本中文说明提供项目范围、安装与使用指引。
+文档默认展示英文，并通过语言链接提供对应的简体中文版。无论文档或 UI 使用哪种语言，API 返回的说明、命令名、字段名和编号标识均保持英文。
 
 ## 从源码构建
 
@@ -158,4 +158,4 @@ GitHub Actions 会在代码推送和拉取请求时构建。推送 `v<版本号>
 
 ## 许可证
 
-[MIT](LICENSE)。游戏与第三方依赖保留各自的许可证。
+[MIT 英文原文](LICENSE) | [中文参考译文](LICENSE.zh-CN.md)。许可证以英文原文为准。游戏与第三方依赖保留各自的许可证。

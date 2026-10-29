@@ -1,5 +1,7 @@
 # Runtime ID reference
 
+English | [简体中文](REFERENCE.zh-CN.md)
+
 Reference mappings for the original Japanese release of Koikatu and the default female model (`ill_Default_Female`). Use the live `catalog` for the available IDs, model-specific patterns and current game conditions. Native morph identifiers are source data; English expression labels interpret those identifiers.
 
 [API command and reference input rules](../API.md). Every listed runtime entry can be passed back as an object, its `key`, or its numeric `id` in the matching input domain. Queue tasks use the same action and map IDs; task IDs themselves are unique run identifiers.
@@ -307,5 +309,7 @@ Save a fresh `catalog` result after loading the actor, then run:
 ```powershell
 python -X utf8 tools/export_reference.py --catalog catalog.json
 ```
+
+This command regenerates the English reference. Update the corresponding tables in the [Chinese reference](REFERENCE.zh-CN.md) with the same IDs, keys, hashes and morph targets; translate explanations only.
 
 Runtime request templates contain the current story generation. Obtain fresh templates when calling the API.

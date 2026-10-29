@@ -23,6 +23,7 @@ def main():
     options = parser.parse_args()
     catalog = json.loads(options.catalog.read_text(encoding="utf-8"))
     parts = ["# Runtime ID reference\n",
+             "English | [简体中文](REFERENCE.zh-CN.md)\n",
              "Reference mappings for the original Japanese release of Koikatu and the default female model (`ill_Default_Female`). Use the live `catalog` for the available IDs, model-specific patterns and current game conditions. Native morph identifiers are source data; English expression labels interpret those identifiers.\n",
              "[API command and reference input rules](../API.md). Every listed runtime entry can be passed back as an object, its `key`, or its numeric `id` in the matching input domain. Queue tasks use the same action and map IDs; task IDs themselves are unique run identifiers.\n",
              "## Native scheduler actions\n",
@@ -47,7 +48,7 @@ def main():
                   "Use `play_animation.state`. The signed ID is `Animator.StringToHash(key)` on layer 0, not a scheduler action ID. Animation playback does not perform gameplay tasks, props or navigation. The runtime confirms each listed state exists; the discovery list is not a complete Studio animation library.\n",
                   table(["Signed state hash", "State key", "English meaning"],
                         [(r["id"], "`" + r["key"] + "`", r["name"]) for r in catalog["animations"]]),
-                  "\n## Regenerating the reference\n\nSave a fresh `catalog` result after loading the actor, then run:\n\n```powershell\npython -X utf8 tools/export_reference.py --catalog catalog.json\n```\n\nRuntime request templates contain the current story generation. Obtain fresh templates when calling the API.\n"])
+                  "\n## Regenerating the reference\n\nSave a fresh `catalog` result after loading the actor, then run:\n\n```powershell\npython -X utf8 tools/export_reference.py --catalog catalog.json\n```\n\nThis command regenerates the English reference. Update the corresponding tables in the [Chinese reference](REFERENCE.zh-CN.md) with the same IDs, keys, hashes and morph targets; translate explanations only.\n\nRuntime request templates contain the current story generation. Obtain fresh templates when calling the API.\n"])
     options.output.parent.mkdir(parents=True, exist_ok=True)
     options.output.write_text("\n".join(parts), encoding="utf-8")
     print(json.dumps({"output": str(options.output), "actions": len(catalog["actions"]), "maps": len(catalog["maps"]), "expressions": {f: len(catalog["expressions"][f]) for f in ("eyes", "eyebrow", "mouth")}, "animations": len(catalog["animations"])}))

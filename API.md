@@ -1,5 +1,7 @@
 # KK_StoryNPCBridge API 1.0.0
 
+English | [简体中文](API.zh-CN.md)
+
 ## Transport and authentication
 
 Use UTF-8 newline-delimited JSON over IPv4 TCP loopback. The default port is `64321`; the port and authentication token are in `BepInEx/config/KK_StoryNPCBridge.cfg`. Never publish the token. The Python standard-library client in `tools/bridge_client.py` handles authentication, request IDs and heartbeats.
@@ -50,7 +52,7 @@ An object can contain `id`, `key`, or both. When both are present, they must ref
 | Map | Native story/event map ID | Task `map`; development `game.map.map` | `-1` / `automatic` is valid only for task auto-selection |
 | Native plan | Read-only native sub-plan value | `native.plansNo` / `plansName` | Preserve it for observation; it is not a separate callable task ID |
 
-The reference tables are in [docs/REFERENCE.md](docs/REFERENCE.md). Runtime catalogs remain authoritative for models, installed content and availability.
+The reference tables are in [docs/REFERENCE.md](docs/REFERENCE.md) ([简体中文](docs/REFERENCE.zh-CN.md)). Runtime catalogs remain authoritative for models, installed content and availability.
 
 ### Expressions
 

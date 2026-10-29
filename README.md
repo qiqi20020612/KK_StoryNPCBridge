@@ -108,11 +108,11 @@ with BridgeClient(game_root="<path-to-Koikatu>") as bridge:
 
 ## Documentation
 
-- [API reference](API.md): transport, commands, ownership, returned values, activity reports and dialogue events.
-- [ID reference](docs/REFERENCE.md): actions, maps, facial patterns and Animator states.
+- [API reference](API.md) ([简体中文](API.zh-CN.md)): transport, commands, ownership, returned values, activity reports and dialogue events.
+- [ID reference](docs/REFERENCE.md) ([简体中文](docs/REFERENCE.zh-CN.md)): actions, maps, facial patterns and Animator states.
 - `catalog`: the authoritative runtime catalog for the loaded game and character model.
 
-The API documentation is maintained in English. The [Chinese project guide](README.zh-CN.md) covers installation, usage and project scope.
+Documentation defaults to English, with Simplified Chinese editions available through the language links. API response descriptions, command names, field names and IDs remain English regardless of documentation or UI language.
 
 ## Build from source
 
@@ -158,4 +158,4 @@ The output is `bin/KK_StoryNPCBridge.dll`. To copy it into the game, close the g
 
 ## License
 
-[MIT](LICENSE). Game and third-party dependencies retain their respective licenses.
+[MIT](LICENSE) ([简体中文参考译文](LICENSE.zh-CN.md)). The English license is authoritative. Game and third-party dependencies retain their respective licenses.
