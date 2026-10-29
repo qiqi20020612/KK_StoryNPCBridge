@@ -158,4 +158,4 @@ The output is `bin/KK_StoryNPCBridge.dll`. To copy it into the game, close the g
 
 ## License
 
-[MIT](LICENSE) ([简体中文参考译文](LICENSE.zh-CN.md)). The English license is authoritative. Game and third-party dependencies retain their respective licenses.
+[MIT](LICENSE). Game and third-party dependencies retain their respective licenses.
