@@ -60,7 +60,7 @@ namespace KK_StoryNPCBridge
             {
                 SyncAdvInputLock(); ConsumeBlockedAdvMouse();
                 GUI.enabled = guiEnabled && !AdvMouseBlocked;
-                if (panelVisible && !AdvMouseBlocked)
+                if (panelVisible && (!AdvMouseBlocked || Recovering))
                 {
                     System.Threading.Interlocked.Exchange(ref panelOwner.LastSeen, DateTime.UtcNow.Ticks);
                     if (panelStyle == null)
@@ -84,6 +84,7 @@ namespace KK_StoryNPCBridge
             panelScroll = GUILayout.BeginScrollView(panelScroll);
             GUILayout.Label(ownedName + T(" · 专属 NPC · ") + ownedState);
             GUILayout.Label((ownedController == null ? T("原生 AI 管理") : T("插件控制中")) + T("   |   地图 ") + ownedMap + T("   |   身份 ") + ActorId);
+            if (Recovering) GUILayout.Label(T("等待控制器重连，剩余秒数：") + Math.Max(0, (int)(recoveryDeadline - Time.realtimeSinceStartup)));
             GUILayout.Label(T("结束控制后恢复原生行为，未受控期间持续记录。数值独立保存。"));
             GUILayout.BeginHorizontal();
             if (GUILayout.Button(T("开始控制"))) Ui("claim", null);

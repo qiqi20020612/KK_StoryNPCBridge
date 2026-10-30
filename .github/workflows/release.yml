@@ -71,9 +71,13 @@ jobs:
 
           This version injects one new bridge character (`bridge:main`). Only this character can currently be controlled. Existing NPC targeting is planned.
 
-          - Manual or external application control of stats, expressions, actions, navigation and native ADV dialogue.
-          - Native AI resumes on release or disconnect, with activity reports returned on the next claim.
-          - English API documentation and an optional Simplified Chinese plugin UI.
+          - Player names, native time periods, weekdays and explicit day-ending/day-start events.
+          - Scene-independent native attributes, relationships, club membership and promised dates, with actual readback and independent progress per story save.
+          - Expressions and body animation in native conversations, plus long ADV replies paginated at 50 text elements per page.
+          - Unexpected disconnects hold position for a configurable recovery period (60 seconds by default), with authenticated token-based resume. Normal release/close restores native AI without a grace period.
+          - Actions, navigation, native dialogue events and complete activity reports through the local API. English and Chinese project guides and plugin UI.
+
+          The native calendar exposes weekdays rather than absolute dates. Native ADV uses a square fallback for supplementary Unicode characters such as Emoji; API history retains the original text. See the API reference for recovery and per-save sidecar backup details.
 
           Install BepInEx 5, then copy `KK_StoryNPCBridge.dll` into `BepInEx/plugins`, or extract the ZIP into the game directory. Koikatsu Party requires purchasing the After Party DLC and installing the patch from the official website.
 
@@ -86,9 +90,13 @@ jobs:
 
           当前版本会注入一个新的桥接角色（`bridge:main`），且只有这个角色可以被控制。控制已有 NPC 属于后续计划。
 
-          - 支持手动或外部应用控制数值、表情、行动、导航和原生 ADV 对话。
-          - 释放控制或连接断开后恢复原生 AI，下次接管时直接返回行动报告。
-          - 项目说明、API 参考和编号参考均提供中英文版本；插件 UI 默认英文，可切换为简体中文。
+          - 提供玩家名字、原生时间段、星期和明确的日终／新一天事件。
+          - 任意场景修改原生属性、关系、社团成员与约会约定，返回实际结果，并按故事存档独立保存进度。
+          - 原生对话中支持表情和身体动作；长 ADV 回复每页最多 50 个文本元素。
+          - 意外断线后原地等待，默认保留 60 秒恢复期，可通过认证与私有 token 安全接续；正常释放／关闭不进入等待期。
+          - 本地接口支持行动、导航、原生对话事件和完整行动报告；项目文档和插件 UI 均提供中英文。
+
+          原生日历提供星期，没有绝对日期。原生 ADV 中 Emoji 等补充平面 Unicode 字符以方框替代，接口历史保留原文。恢复协议和分存档外置数据备份方式见 API 文档。
 
           安装 BepInEx 5 后，将 `KK_StoryNPCBridge.dll` 复制到 `BepInEx/plugins`，或将 ZIP 解压到游戏目录。Koikatsu Party 需购买 After Party DLC，并安装官网补丁后才可使用。
 

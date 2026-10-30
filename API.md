@@ -1,4 +1,4 @@
-# KK_StoryNPCBridge API 1.0.0
+# KK_StoryNPCBridge API 1.1.0
 
 English | [简体中文](API.zh-CN.md)
 
@@ -11,23 +11,45 @@ Use UTF-8 newline-delimited JSON over IPv4 TCP loopback. The default port is `64
 {"id":"2","op":"status"}
 ```
 
-Success is `{ "id": "2", "ok": true, "result": ... }`. Errors are `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`. The protocol version is `2`; the plugin version is `1.0.0`.
+Success is `{ "id": "2", "ok": true, "result": ... }`. Errors are `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`. The protocol version is `2`; the plugin version is `1.1.0`.
 
 Authentication and status replies identify the plugin with `pluginName="KK_StoryNPCBridge"` and `pluginGuid="KK_StoryNPCBridge"`. The single DLL installs directly as `BepInEx/plugins/KK_StoryNPCBridge.dll`.
 
-There are at most four clients, 64 KiB per incoming command frame, eight Unity commands processed per frame and 32 queued native tasks. Send `ping` every three seconds. Controller disconnect or approximately 12 seconds without a heartbeat releases control. A queued command expires after five seconds before execution. Snapshot subscriptions default to 5 Hz, configurable from 1 to 20 Hz.
+There are at most four clients, 64 KiB per incoming command frame, eight Unity commands processed per frame and 32 queued native tasks. Send `ping` every three seconds. Transport loss or approximately 12 seconds without a heartbeat starts the recovery grace period described below. A queued command expires after five seconds before execution. Snapshot subscriptions default to 5 Hz, configurable from 1 to 20 Hz.
 
 API descriptions, command explanations and plugin-generated summaries are English. Character names, supplied dialogue, native menu labels, `nativeName` and native asset identifiers are content from the caller or game; they are preserved, not translated. UI language does not change API descriptions, IDs or keys.
 
 ## Actor ownership
 
-Only `bridge:main` is writable. Discover the current `generation` through `status`, `list` or `get`. Actor writes require `target`, `generation` and a successful `claim` by that connection. Stale generations and writes from another owner are rejected. Most writes require roaming; dialogue operations also support the owned character's native conversation. Scene loading can return `busy` or `not_ready`.
+Only `bridge:main` is writable. Discover the current `generation` through `status`, `list` or `get`. Actor writes require `target`, `generation` and a successful `claim` by that connection. Stale generations and writes from another owner are rejected. `claim`, `release` and `set_stats` work for a loaded story regardless of scene, map transitions or model availability. Navigation and scheduler writes require roaming; expressions and animation also support the owned character's native conversation. Other scene-dependent operations can return `busy` or `not_ready`.
 
-Unclaimed actors use native AI. `claim` cancels the autonomous task and freezes the activity report. `release`, `release_all` or controller loss restores native scheduling after scene/dialogue cleanup. `stop` keeps ownership. Do not treat `nativeAI=true` as proof of autonomy: it means the native executor exists; `nativeAutonomy` identifies who selects actions.
+Unclaimed actors use native AI. `claim` cancels the autonomous task and freezes the activity report. `release`, `release_all` or normal `disconnect` restores native scheduling after scene/dialogue cleanup. Unexpected controller loss first holds position for recovery; native scheduling resumes if that reservation expires. `stop` keeps ownership. Do not treat `nativeAI=true` as proof of autonomy: it means the native executor exists; `nativeAutonomy` identifies who selects actions.
+
+### Unexpected disconnect and recovery
+
+`claim` and `resume` replies include a private `resumeToken`, `world`, current actor generation and the complete handover report. Store these credentials in the controller; they are absent from snapshots, events and profile files. Authentication is still required on every new connection.
+
+```python
+claimed = bridge.request('claim', **p)
+resume_token = claimed['resumeToken']
+# After an unexpected connection loss, create/authenticate a new BridgeClient.
+recovered = replacement.request('resume', resumeToken=resume_token, **p)
+resume_token = recovered['resumeToken']  # Rotated; the old token is invalid.
+```
+
+On transport/heartbeat loss, the actor enters `recovery.state='waiting_reconnect'`, cancels navigation/queued tasks, holds position and preserves the active conversation and pending request IDs. Other connections cannot claim the reserved actor. `Bridge.ReconnectGraceSeconds` in the cfg defaults to `60` and is clamped to `5–600` seconds. `recovery` reports `deadlineUtc`, `remainingSeconds`, `graceSeconds` and `interruptedTaskState`. Resume requires the same running story, generation, valid token and an unexpired reservation. It rotates the token and pauses conversation/request timeouts for the disconnected interval. Interrupted actions require an explicit new command; they are not replayed automatically.
+
+During grace, ADV interaction remains blocked except ending the conversation. No reconnection text is inserted into native dialogue. The optional developer panel shows connection status. Expiry emits `controller_recovery_expired`, releases control with reason `reconnect_timeout` and restores native AI after cleanup. Story changes or a game restart invalidate recovery.
+
+Normal termination must send `release`, `release_all` or `disconnect` before closing TCP. `disconnect` acknowledges release and closes the connection; no target is needed. A bare socket close cannot express intent and is treated as unexpected. `BridgeClient.close()` and context-manager exit send `disconnect` by default. `close(graceful=False)` represents transport loss; the library does not implement automatic reconnection or model calls.
+
+### Per-save bridge state
+
+`actor.profile` identifies `save`, SHA-256 `key`, `scope='story_save_slot'` and `initializedThisLoad`. The key derives from the native save filename, case-insensitively. Sidecars live in `BepInEx/config/KK_StoryNPCBridge/profiles/<key>/`: `owned-actor.json`, `owned-native.bin` and `activity-journal.json`. First creation for a slot starts with scores/counters `0`, exposed flags `false`, `relation=-1`; subsequent loads retain that slot's bridge progress. This initialization does not clear the game's internal identity, card or scheduling setup. A successful native Save As branches the current bridge progress into the destination slot. Back up these sidecars with the native saves. Previous unscoped files remain untouched and are not automatically imported into each slot.
 
 ## Catalogs and reference inputs
 
-`catalog` returns `actions`, `maps`, `expressions`, `animations`, `idDomains`, `ui`, `generation` and `descriptionLanguage="en"`. No ownership is needed. Catalogs are discovered from the loaded installation. Expressions and animations require the character to be loaded; their empty/unavailable catalogs indicate that the actor should first walk to the player.
+`catalog` returns `actions`, `maps`, `expressions`, `animations`, `stats`, `time`, `idDomains`, `ui`, `generation` and `descriptionLanguage="en"`. No ownership is needed. Catalogs are discovered from the loaded installation. Expressions and animations require an active model; check `visualAvailable` and `visualContext` (`roaming` or `native_talk`). Refresh visual catalogs when entering or leaving native talk, which uses a separate model/Animator.
 
 Each discrete entry has an integer `id`, stable `key`, English `name` and English `description`. Native source names or exact morph targets are included where applicable. Entries with `request` / `queueRequest` contain command parameters with the current actor generation, ready to pass to `BridgeClient.request` after claiming control. The client adds the transport request ID; raw TCP clients must add their own `id`. Requests do not claim automatically. Refresh the catalog after loading another story or character model.
 
@@ -51,6 +73,8 @@ An object can contain `id`, `key`, or both. When both are present, they must ref
 | Animator state | Signed `Animator.StringToHash` ID on layer 0, or its state key | `play_animation.state` | Visual playback only, with no scheduler side effects |
 | Map | Native story/event map ID | Task `map`; development `game.map.map` | `-1` / `automatic` is valid only for task auto-selection |
 | Native plan | Read-only native sub-plan value | `native.plansNo` / `plansName` | Preserve it for observation; it is not a separate callable task ID |
+| Relationship | Native derived relationship, -1 through 2 | `set_stats.changes.relation` | Accepts a returned relationship object, key or ID |
+| Game time | Native stages, UI periods and weekdays | `gameTime`, `time_catalog` | Observations; there is no production command to change the player clock |
 
 The reference tables are in [docs/REFERENCE.md](docs/REFERENCE.md) ([简体中文](docs/REFERENCE.zh-CN.md)). Runtime catalogs remain authoritative for models, installed content and availability.
 
@@ -89,15 +113,65 @@ Queue entries carry `taskId`, `action`, `actionInfo`, `map`, `mapInfo`, `duratio
 
 ### Animations
 
-`animation_catalog` lists discovered native wait-point and common states that the loaded Animator confirms exist on layer 0. It is not a Studio animation database or a guaranteed exhaustive enumeration of every Unity state. A valid raw state string remains accepted. Each returned entry explains the state and contains its signed hash and an executable `play_animation` request.
+`animation_catalog` lists native wait-point, talk motion, controller-clip and common states that the active Animator confirms exist on layer 0. It is not a Studio animation database or an exhaustive enumeration of every Unity state. A valid raw state string remains accepted. Each entry includes its `context`, English explanation, signed hash and executable `play_animation` request. Both visual commands address the visible talk model during an owned conversation.
 
 ```python
-idle = next(x for x in catalog['animations'] if x['key'] == 'Idle')
+idle = bridge.request('animation_catalog', **p)[0]  # Discover in the current context.
 bridge.request('play_animation', state=idle, **p)
 bridge.request('play_animation', state=idle['id'], **p)
 ```
 
-Playing `Reading` does not automatically find a seat, add a book or run action `9`. Use the scheduler action for native gameplay. Live animation state is described by `animationDetails`.
+Playing `Reading` does not automatically find a seat, add a book or run action `9`. Use the scheduler action for native gameplay. Live animation state is described by `animationDetails`; `animation.state`/hashes report actual playback, while `requestedState` identifies an explicit override.
+
+## Native attributes and relationships
+
+`stat_catalog` (also `catalog.stats`) returns field types, ranges, English meanings and `relationships`. `actor.stats` contains the actual native values and `actor.relationship` their descriptive relation. `set_stats.changes` validates all fields before changing state, writes native state, reads it back and returns the complete actor. `stats_changed` carries `requested`, `before` and `actual`. No roaming/ADV/map/model restriction applies once the story actor exists and the caller owns its current generation.
+
+| Field | Type / range | Meaning |
+| --- | --- | --- |
+| `favor`, `intimacy` | integer 0–100 | Affection and intimacy toward the player |
+| `anger`, `lewdness` | integer 0–100 | Native anger and lewdness scores |
+| `hCount` | integer 0–2147483647 | Native intimate encounter count |
+| `nickNameTalkCount` | integer 0–2147483647 | Nickname conversation count |
+| `myRoomCount` | integer 0–2147483647 | Player-room visit count |
+| `eventAfterDay` | integer 0–2147483647 | Native days-after-event counter |
+| `hasMet`, `isFriend` | boolean | Meeting markers (talk events 0/1) and friendship marker (2) |
+| `isGirlfriend`, `isStaff`, `isDate` | boolean | Girlfriend, Koikatsu club member, promised date |
+| `isAnger`, `confessed`, `isFirstGirlfriend` | boolean | Angry, confession and first-girlfriend native flags |
+| `isTaked`, `isLunch`, `isTalkPoint`, `isKiss` | boolean | Independently preserved native flags with these names |
+| `isVirgin`, `isAnalVirgin` | boolean | Native vaginal/anal virginity flags |
+| `relation` | reference | -1 `stranger` (not met), 0 `acquaintance`, 1 `friend`, 2 `girlfriend` |
+
+Setting `relation` updates meeting, friendship and girlfriend flags together. Explicit conflicting flags are rejected with `reference_mismatch`. Individual flags can also be written independently; the returned relationship uses the game's native precedence. Writing `anger` alone also derives `isAnger = anger > 0`; provide `isAnger` explicitly to choose otherwise. Flags and scores do not run the corresponding story event or guarantee that an invitation is currently possible.
+
+```python
+friend = next(x for x in bridge.request('stat_catalog')['relationships']
+              if x['key'] == 'friend')
+actual = bridge.request('set_stats', changes={
+    'relation': friend, 'favor': 30, 'intimacy': 20,
+    'isStaff': True, 'isDate': True,
+}, **p)
+assert actual['stats']['relation'] == 1
+```
+
+## Player and native game time
+
+`status.player` supplies `name`, `lastName`, `firstName`, `nickname`, plus `loaded`, `map`, `mapInfo` and `position`. Names remain available from the loaded story when the player model is absent; player control is outside this API.
+
+`status.gameTime` reports `available`, `stage`, `period`, `day`, `timerSeconds` and an English description. `time_catalog` (also `catalog.time`) describes all stage/period/weekday IDs. A stage is the exact native cycle phase; a period is the coarser native UI grouping. Full mappings are in the [ID reference](docs/REFERENCE.md).
+
+`day` contains `id`, `observedDayIndex`, `weekday`, `calendarDate=null`, `dateSource='native_weekday_with_observed_day_counter'`, `isDayEnding` and `isNewDay`. The game provides a weekday, not an absolute year/month/day. The per-slot counter increments only for calendar advances observed while the plugin is running; it is not a historical total of days played. `day.id` combines the current world and that counter. `isNewDay` marks the native calendar advance/wake-up phase, and `isDayEnding` marks the night phase before the next day.
+
+| Global event | Trigger / payload |
+| --- | --- |
+| `game_time_initialized` | Ready story baseline; complete `gameTime` |
+| `game_stage_changed` | Exact native cycle change; `from`, `to`, `time`, `world` |
+| `game_time_period_changed` | UI period change; `from`, `to`, `time`, `world` |
+| `game_day_ending` | Entered native night; `day`, `reason='native_night_entered'`, `world` |
+| `game_day_ended` | Native calendar actually advanced; previous `day`, `nextWeekday`, `daysAdvanced`, `reason`, `world` |
+| `game_day_started` | Follows day-ended; new `day`, `previousWeekday`, `daysAdvanced`, `world` |
+
+These events have `target=null` and `generation=null`. Initial loading establishes a baseline instead of announcing a completed day. Entering night and actually advancing the calendar are separate events. `available=false`/`day=null` indicates that a ready story baseline does not yet exist.
 
 ## Commands
 
@@ -115,9 +189,12 @@ Unless stated otherwise, actor commands take `target`; write commands also take 
 | `map_catalog` | Story and event map references; no target needed |
 | `expression_catalog` | Actor-specific facial pattern directory and controls |
 | `animation_catalog` | Discovered playable Animator states |
-| `claim` | Actor plus complete `activityReport` and identical `handoverReport`; idempotent for the same owner |
+| `stat_catalog` / `time_catalog` | Native attribute/relationship definitions / stage, period and weekday references |
+| `claim` | Actor plus complete `activityReport`, identical `handoverReport`, private `resumeToken` and `world`; idempotent for the same owner |
+| `resume` | `resumeToken`, current target/generation; recover reserved ownership and rotate token |
 | `release` | Optional `restorePosition` boolean; restores native AI and returns actor/current interval |
 | `release_all` | Releases this connection's ownership; reply directly includes the current `activityReport` |
+| `disconnect` | Normal close: release ownership, acknowledge and close this connection; no target needed |
 | `activity_report` | Optional retained `reportId`; normal calls already include complete entries |
 | `walk_to_player` / `summon` | Native walking request; observe `approach` for completion |
 | `set_action` | `action`, optional `map`, `duration`; or a returned `task` |
@@ -128,11 +205,11 @@ Unless stated otherwise, actor commands take `target`; write commands also take 
 | `teleport` | Explicit position operation; same `position` format |
 | `turn` | `yaw` from -3600 to 3600 degrees |
 | `stop` | Cancel current task/movement while retaining control |
-| `set_stats` | `changes`: integer `favor`, `intimacy`, `anger` in `[0,100]`, boolean `isAnger` |
+| `set_stats` | `changes`: fields/references in the attribute table; returns actual native state in every scene |
 | `set_expression` / `clear_expression` | Facial references and controls described above / clear override |
 | `play_animation` | `state` reference, raw state key or signed state hash |
 | `native_talk` | Start the native talk scene; actual native dialogue/menu remains available |
-| `say_native` | `text`; one native ADV line outside a managed conversation |
+| `say_native` | `text`; paginated native ADV reply outside a managed conversation; up to 1000 UTF-16 units |
 | `dialogue_open` | Optional `text`, `initiator='player'/'npc'`, `requestInput`, `timeoutSeconds`, `afterInteractionId` |
 | `say` | `text`, optional `requestInput`, `afterInteractionId`; start/continue managed dialogue |
 | `dialogue_status` | Full conversation state, request IDs and displayed history |
@@ -171,6 +248,10 @@ Movement entries are `map_changed`: `fromMap`, `toMap`, `fromMapInfo`, `toMapInf
 `dialogue_request` contains identifiers, kind and the native menu command or user input. Native button choices have `userText=null`; the bridge does not invent a player utterance or package a prompt/history for the external application. Native menu labels remain source content. `commandId`, `category` and optional `eventId` retain native numbering; known invitation examples are `eventId=8` for studying and `eventId=11` for following. These are observed UI intents, not scheduler action IDs.
 
 Touch/look events include `interactionId`, `kind`, `nativeMode`, `region`, voice/pose data and lifecycle. `nativeMode=0` means touch; `1` means look. Native voice, animation and counters execute normally. An external application may explicitly call `say` or `dialogue_open` with `afterInteractionId` once the reaction completes; no automatic dialogue request is created.
+
+Supplied replies are displayed through native ADV in pages of at most 50 Unicode text elements (including punctuation/Latin characters); line breaks also end a page. Managed replies accept up to 4000 UTF-16 units. The full original reply appears once in conversation history and `npc_dialogue`, regardless of the page count. `dialogue.pagination` reports `page`, `pageCount`, `maxCharacters=50`, `countUnit='unicode_text_element'` and `nonBmpFallbacks`. Each `dialogue_page` event includes `conversationId`, `turn`, one-based `page`, `pageCount`, original page `text`, actual `displayText` and `maxCharacters`.
+
+Unity 5's native typewriter cannot safely measure supplementary Unicode characters (for example Emoji). Only native presentation substitutes each such character with `□`; API history and original page text are preserved. `nonBmpFallbacks` reports the number of substitutions in the reply. Invalid unpaired UTF-16 surrogates are rejected before displaying text.
 
 Other events include controller claims/releases, task queued/started/arrived/completed/failed/cancelled, dialogue cancellation and native invitation acceptance/cancellation. Events and snapshots contain sequence numbers. After reconnecting, refresh generation and request identifiers; never replay stale write commands blindly.
 

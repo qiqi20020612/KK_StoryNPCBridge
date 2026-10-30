@@ -9,7 +9,7 @@ namespace KK_StoryNPCBridge {
 internal sealed class Request {public Session Session;public Dictionary<string,object> Data;public DateTime Received;}
 internal sealed class Session {
  public readonly string Id=Guid.NewGuid().ToString("N");
- public volatile bool Alive=true,Authenticated,Subscribed;
+ public volatile bool Alive=true,Authenticated,Subscribed,CleanExit;
  public long LastSeen=DateTime.UtcNow.Ticks;
  public TcpClient Client;
  readonly Queue<string> replies=new Queue<string>();
@@ -39,6 +39,7 @@ internal sealed class BridgeServer:IDisposable {
     else{pending.Add(buffer[i]);if(pending.Count>65536)throw new IOException("Frame too large");}
    }}
    string reply;while((reply=s.Pop())!=null)Send(stream,reply);
+   if(s.CleanExit)break;
    string snapshot=Snapshot;if(s.Authenticated&&s.Subscribed&&snapshot!=null&&snapshot!=last){Send(stream,"{\"event\":\"snapshot\",\"data\":"+snapshot+"}");last=snapshot;}
    Thread.Sleep(15);
   }
@@ -56,7 +57,7 @@ internal sealed class BridgeServer:IDisposable {
   else{lock(requests){if(requests.Count>=64){s.Reply(Error(id,"busy","Command queue full"));return;}requests.Enqueue(new Request{Session=s,Data=d,Received=DateTime.UtcNow});}}
   Interlocked.Exchange(ref s.LastSeen,DateTime.UtcNow.Ticks);
  }catch(FormatException e){s.Reply(Error(id,"invalid_request",e.Message));}}
- static bool Equal(string a,string b){int x=a.Length^b.Length;for(int i=0;i<b.Length;i++)x|=b[i]^(i<a.Length?a[i]:0);return x==0;}
+ internal static bool Equal(string a,string b){if(a==null||b==null)return false;int x=a.Length^b.Length;for(int i=0;i<b.Length;i++)x|=b[i]^(i<a.Length?a[i]:0);return x==0;}
  public static object Ok(object id,object value){return Json.Map("id",id,"ok",true,"result",value);}
  public static object Error(object id,string code,string message){return Json.Map("id",id,"ok",false,"error",Json.Map("code",code,"message",message));}
  public void Dispose(){running=false;listener.Stop();lock(sessions)foreach(Session s in sessions){s.Alive=false;s.Client.Close();}}

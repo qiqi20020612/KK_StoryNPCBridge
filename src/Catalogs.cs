@@ -295,6 +295,11 @@ namespace KK_StoryNPCBridge
         List<string> AnimationStates()
         {
             var names = new List<string>(new string[] { "Idle", "Locomotion", "Locomotion 0", "Locomotion_Anger", "talk", "talk_uke", "Phone3", "Dinner", "Dinner2" });
+            string talkState = NativeTalkAnimation();
+            if (!string.IsNullOrEmpty(talkState) && !names.Contains(talkState)) names.Add(talkState);
+            if (ownedCha != null && ownedCha.animBody != null && ownedCha.animBody.runtimeAnimatorController != null)
+                foreach (AnimationClip clip in ownedCha.animBody.runtimeAnimatorController.animationClips)
+                    if (clip != null && !names.Contains(clip.name)) names.Add(clip.name);
             if (ownedNpc != null && !string.IsNullOrEmpty(ownedNpc.motion.state)) { if (!names.Contains(ownedNpc.motion.state)) names.Add(ownedNpc.motion.state); }
             if (action != null && action.PosSet != null && action.PosSet.waitPointDic != null)
                 foreach (var points in action.PosSet.waitPointDic.Values) foreach (var point in points) if (point != null && point.parameterList != null)
@@ -324,6 +329,7 @@ namespace KK_StoryNPCBridge
             foreach (string state in AnimationStates()) if (ownedCha.animBody.HasState(0, Animator.StringToHash(state)))
             {
                 var row = AnimationReference(state);
+                row["context"] = OwnedTalkActive ? "native_talk" : "roaming";
                 row["request"] = Json.Map("op", "play_animation", "target", ActorId, "generation", ownedGeneration, "state", Json.Map("id", row["id"], "key", state)); result.Add(row);
             }
             return result;
@@ -357,6 +363,7 @@ namespace KK_StoryNPCBridge
         object ReadCatalog()
         {
             return Json.Map("catalogVersion", 1, "descriptionLanguage", "en", "generation", ownedGeneration, "actions", ReadNativeActions(), "maps", ReadMapCatalog(), "expressions", ReadExpressionCatalog(), "animations", ReadAnimationCatalog(),
+                "stats", ReadStatCatalog(), "time", ReadTimeCatalog(),
                 "idDomains", Json.Map("actions", "Native story scheduler action IDs, shared by set_action and queue_action.", "expressions", "Actor-specific FBS pattern indices; eyes, eyebrow and mouth are separate domains.", "animations", "Signed Animator.StringToHash state IDs on layer 0; distinct from scheduler action IDs.", "maps", "Native map IDs; -1 means automatic selection in task commands."),
                 "ui", Json.Map("defaultLanguage", "en", "languages", new string[] { "en", "zh-CN" }, "configSection", "UI", "configKey", "Language", "description", "Only plugin debug and essential dialogue UI are localized. API descriptions remain English."),
                 "referenceInput", "Pass a returned entry, its numeric id, or its key. Actor writes require claim and the current generation. Requests in catalog entries are ready to submit after claiming the actor.");

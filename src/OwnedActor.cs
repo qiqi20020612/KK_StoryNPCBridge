@@ -29,25 +29,16 @@ namespace KK_StoryNPCBridge
         void InitializeOwnedProfile()
         {
             ownedName = Config.Bind("OwnedNpc", "DisplayName", "Bridge NPC", "Name of the one plugin-owned female actor; existing profile names are preserved").Value;
-            ownedStats = Json.Map("favor", 0, "intimacy", 0, "anger", 0, "isAnger", false);
+            ownedStats = ZeroStats();
             ownedFace = NeutralFace();
             string directory = Path.Combine(Paths.ConfigPath, "KK_StoryNPCBridge");
             Directory.CreateDirectory(directory); ownedStatePath = Path.Combine(directory, "owned-actor.json");
-            if (File.Exists(ownedStatePath))
-            {
-                var profile = Json.Parse(File.ReadAllText(ownedStatePath, Encoding.UTF8)) as Dictionary<string, object>;
-                if (profile == null || Text(profile, "id") != ActorId) throw new FormatException("Invalid owned NPC profile");
-                var stats = Object(profile, "stats"); ValidateStats(stats);
-                foreach (var p in stats) ownedStats[p.Key] = p.Value;
-                object face;
-                if (profile.TryGetValue("face", out face) && face is Dictionary<string, object>)
-                    foreach (var p in (Dictionary<string, object>)face) if (ownedFace.ContainsKey(p.Key)) ownedFace[p.Key] = p.Value;
-            }
-            else SaveOwnedProfile();
         }
         void SaveOwnedProfile()
         {
-            var profile = Json.Map("schema", 1, "id", ActorId, "name", ownedName, "template", "ill_Default_Female", "stats", ownedStats, "face", ownedFace);
+            if (storySaveName == null) return;
+            var profile = Json.Map("schema", 2, "id", ActorId, "name", ownedName, "template", "ill_Default_Female", "stats", ownedStats, "face", ownedFace,
+                "storySave", storySaveName, "observedDayIndex", observedDayIndex);
             string temporary = ownedStatePath + ".tmp";
             File.WriteAllText(temporary, Json.Stringify(profile), new UTF8Encoding(false));
             if (File.Exists(ownedStatePath)) File.Replace(temporary, ownedStatePath, null);
@@ -58,12 +49,12 @@ namespace KK_StoryNPCBridge
             if (Mode == "talk") wasNativeTalk = true;
             else if (wasNativeTalk && Mode == "roaming" && !SceneBusy)
             { wasNativeTalk = false; SyncOwnedStats(); SaveOwnedProfile(); SaveNativeProfile(); }
-            if (ownedController != null && (!ownedController.Alive || (DateTime.UtcNow.Ticks - System.Threading.Interlocked.Read(ref ownedController.LastSeen)) / TimeSpan.TicksPerSecond > 12))
-                ReleaseOwned("controller_disconnected", false);
+            TickControlRecovery();
             if (action == null) { ownedState = "waiting_for_world"; return; }
             if (ownedHeroine == null) EnsureNativeHeroine(Manager.Game.Instance.saveData);
             BindNativeActor();
             if (!ownedReady || SceneBusy || Mode != "roaming") return;
+            if (Recovering) { ownedState = "waiting_reconnect"; return; }
             if (stopOnRoam) { stopOnRoam = false; if (ownedController != null) SetNativeIdle(); else resumeNativePending = true; }
             if (initialSummonPending && action.Player != null && action.Player.chaCtrl != null && action.Player.chaCtrl.loadEnd)
             { PlaceInitialOwnedActor(); }
@@ -113,11 +104,14 @@ namespace KK_StoryNPCBridge
         }
         object ReadOwnedActor()
         {
+            SyncOwnedStats();
             bool loaded = ownedReady && ownedNpc != null && ownedNpc.isActive && ownedMap == map && ownedRoot != null && ownedRoot.activeInHierarchy && ownedCha != null && ownedCha.loadEnd;
             var actor = Json.Map("id", ActorId, "generation", ownedGeneration, "name", ownedName,
                 "origin", "plugin", "controller", ownedController == null ? "game" : "plugin", "nativeAI", true, "nativeAutonomy", ownedController == null,
                 "loaded", loaded, "map", ownedMap, "mapInfo", MapReference(ownedMap), "state", ownedState, "lastError", ownedError,
-                "template", "ill_Default_Female", "stats", new Dictionary<string, object>(ownedStats),
+                "template", "ill_Default_Female", "stats", new Dictionary<string, object>(ownedStats), "relationship", RelationshipReference(Convert.ToInt32(ownedStats["relation"])),
+                "profile", ReadStoryProfile(), "recovery", ReadRecovery(),
+                "visualAvailable", VisualActorReady, "visualContext", OwnedTalkActive ? "native_talk" : VisualActorReady ? "roaming" : null,
                 "statsStore", "native_runtime_plugin_sidecar", "control", ownedController == null ? null : Json.Map("owner", ownedController.Id, "moving", ownedMoving),
                 "nativeNpcComponents", NativeComponentCount(), "nativeBehaviorTrees", NativeTreeCount(), "inNativeRoster", InNativeRoster(),
                 "instances", OwnedInstanceCount(), "nativeRosterAtSpawn", rosterCountAtSpawn, "nativeNpcsAtSpawn", npcCountAtSpawn);
@@ -127,7 +121,7 @@ namespace KK_StoryNPCBridge
             actor.Add("nativeInteraction", ReadNativeInteraction());
             actor.Add("autonomy", ReadAutonomyState());
             actor.Add("activityReport", CurrentActivityReport());
-            if (loaded)
+            if (VisualActorReady)
             {
                 actor.Add("position", Vector(ownedRoot.transform.position)); actor.Add("yaw", ownedRoot.transform.eulerAngles.y);
                 actor.Add("sex", ownedCha.sex); actor.Add("personality", ownedCha.fileParam.personality);
@@ -138,8 +132,9 @@ namespace KK_StoryNPCBridge
                 var states = new List<string>();
                 foreach (string state in new string[] { "Idle", "Locomotion", "Locomotion 0", "Locomotion_Anger", "talk", "talk_uke", "Phone3", "Dinner", "Dinner2" })
                     if (ownedCha.animBody.HasState(0, Animator.StringToHash(state))) states.Add(state);
-                actor.Add("animation", Json.Map("state", animationOverride ? ownedAnimation : ownedNpc.motion.state, "fullPathHash", animation.fullPathHash, "shortNameHash", animation.shortNameHash, "normalizedTime", animation.normalizedTime, "states", states));
-                string animationState = animationOverride ? ownedAnimation : ownedNpc.motion.state;
+                string actualState = ActualAnimationKey(animation.shortNameHash);
+                actor.Add("animation", Json.Map("state", actualState, "requestedState", animationOverride ? ownedAnimation : null, "fullPathHash", animation.fullPathHash, "shortNameHash", animation.shortNameHash, "normalizedTime", animation.normalizedTime, "states", states));
+                string animationState = actualState;
                 actor.Add("animationDetails", string.IsNullOrEmpty(animationState) ? null : AnimationReference(animationState));
                 actor.Add("navigation", Json.Map("enabled", ownedAgent.enabled, "onMesh", ownedAgent.enabled && ownedAgent.isOnNavMesh));
             }
@@ -148,7 +143,7 @@ namespace KK_StoryNPCBridge
         void PlayOwnedAnimation(string state)
         {
             if (!ownedCha.animBody.HasState(0, Animator.StringToHash(state))) throw new BridgeException("unknown_animation", "State is absent from this actor's controller");
-            ownedAnimation = state; animationOverride = true; ownedCha.animBody.speed = 1; ownedCha.animBody.Play(state, 0, 0);
+            ownedAnimation = state; animationOverride = true; ownedCha.animBody.speed = 1; ownedCha.animBody.Play(state, 0, 0); ownedCha.animBody.Update(0);
         }
         void SetLocomotionSpeed(float value)
         {
@@ -168,7 +163,7 @@ namespace KK_StoryNPCBridge
         void ReleaseOwned(string reason, bool restorePosition)
         {
             if (ownedController == null && !ownedMoving && activeTask == null && nativeQueue.Count == 0 && !Approaching && !DialogueActive) return;
-            FinishApproach("cancelled", reason);
+            ClearControlRecovery(); FinishApproach("cancelled", reason);
             if (DialogueActive) EndAdvDialogue(reason);
             if (activeTask != null) AddEvent("native_action_cancelled", activeTask.Read());
             activeTask = null; nativeQueue.Clear(); ownedMoving = false; faceOverride = false; animationOverride = false;

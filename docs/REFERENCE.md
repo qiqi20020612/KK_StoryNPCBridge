@@ -4,7 +4,63 @@ English | [简体中文](REFERENCE.zh-CN.md)
 
 Reference mappings for the original Japanese release of Koikatu and the default female model (`ill_Default_Female`). Use the live `catalog` for the available IDs, model-specific patterns and current game conditions. Native morph identifiers are source data; English expression labels interpret those identifiers.
 
-[API command and reference input rules](../API.md). Every listed runtime entry can be passed back as an object, its `key`, or its numeric `id` in the matching input domain. Queue tasks use the same action and map IDs; task IDs themselves are unique run identifiers.
+[API command and reference input rules](../API.md). Callable references accept a returned object, its `key`, or its numeric `id` in the matching input domain. Game-time references are read-only. Queue tasks use the same action and map IDs; task IDs themselves are unique run identifiers.
+
+## Relationships
+
+Use `set_stats.changes.relation`. A relationship reference updates meeting, friendship and girlfriend flags together. The native getter derives the result from those flags. Attribute types, ranges and all writable flags are documented in [Native attributes and relationships](../API.md#native-attributes-and-relationships).
+
+| ID | Key | English meaning |
+| --- | --- | --- |
+| -1 | `stranger` | Not met |
+| 0 | `acquaintance` | Acquaintance |
+| 1 | `friend` | Friend |
+| 2 | `girlfriend` | Girlfriend |
+
+## Game time
+
+These IDs describe observations from `gameTime`; they are not scheduler action IDs or clock-write commands. The game exposes weekdays, not an absolute calendar date. See [Player and native game time](../API.md#player-and-native-game-time) for day counters and events.
+
+### Native stages
+
+| ID | Key | English meaning |
+| --- | --- | --- |
+| 0 | `wake_up` | Wake up |
+| 1 | `morning` | Morning |
+| 2 | `going_to_school` | Going to school |
+| 3 | `homeroom_1` | Morning homeroom |
+| 4 | `lesson_1` | Morning classes |
+| 5 | `lunch_time` | Lunch |
+| 6 | `lesson_2` | Afternoon classes |
+| 7 | `homeroom_2` | Afternoon homeroom |
+| 8 | `staff_time` | Staff period |
+| 9 | `after_school` | After school |
+| 10 | `going_home` | Going home |
+| 11 | `my_house` | At home / night |
+
+### UI periods
+
+Stages 0–4 map to period 0, 5–7 to 1, 8 to 2, 9–10 to 3 and 11 to 4.
+
+| ID | Key | English meaning |
+| --- | --- | --- |
+| 0 | `morning` | Morning |
+| 1 | `midday` | Lunch / afternoon classes |
+| 2 | `staff_time` | Staff period |
+| 3 | `after_school` | After school |
+| 4 | `night` | Night |
+
+### Weekdays
+
+| ID | Key | English meaning |
+| --- | --- | --- |
+| 0 | `monday` | Monday |
+| 1 | `tuesday` | Tuesday |
+| 2 | `wednesday` | Wednesday |
+| 3 | `thursday` | Thursday |
+| 4 | `friday` | Friday |
+| 5 | `saturday` | Saturday |
+| 6 | `holiday` | Sunday / holiday |
 
 ## Native scheduler actions
 
@@ -211,7 +267,7 @@ Indices are local to the actor model and facial field. A mouth reference cannot 
 
 ## Animator states
 
-Use `play_animation.state`. The signed ID is `Animator.StringToHash(key)` on layer 0, not a scheduler action ID. Animation playback does not perform gameplay tasks, props or navigation. The runtime confirms each listed state exists; the discovery list is not a complete Studio animation library.
+Use `play_animation.state`. The signed ID is `Animator.StringToHash(key)` on layer 0, not a scheduler action ID. Animation playback does not perform gameplay tasks, props or navigation. The runtime confirms each listed state exists; the discovery list is not a complete Studio animation library. These examples use the roaming model. Native talk uses another Animator; refresh `animation_catalog` after entering or leaving a conversation and check each entry's `context`. `animation.state` and hashes report actual playback.
 
 | Signed state hash | State key | English meaning |
 | --- | --- | --- |

@@ -42,6 +42,7 @@ namespace KK_StoryNPCBridge
         }
         Dictionary<string, object> CaptureAutonomyState()
         {
+            SyncOwnedStats();
             var r = ownedNpc == null || ownedNpc.AI == null ? null : ownedNpc.AI.result;
             Base target = ownedNpc == null || ownedNpc.AI == null ? null : ownedNpc.AI.target;
             object targetData = target == null ? null : Json.Map("kind", target is Player ? "player" : "npc", "name", target.heroine != null ? target.heroine.Name : target.player != null ? target.player.Name : null);
@@ -50,7 +51,7 @@ namespace KK_StoryNPCBridge
                 "plansNo", r == null ? -1 : r.plansNo, "plansName", r == null ? null : r.plansName,
                 "props", ownedNpc == null ? 0 : ownedNpc.itemObjList.Count, "target", targetData,
                 "talking", nativeTalkPending || currentTalk != null && ReferenceEquals(currentTalk.targetHeroine, ownedHeroine),
-                "stats", ownedHeroine == null ? null : Json.Map("favor", ownedHeroine.favor, "intimacy", ownedHeroine.intimacy, "anger", ownedHeroine.anger, "isAnger", ownedHeroine.isAnger));
+                "stats", ownedHeroine == null ? null : new Dictionary<string, object>(ownedStats));
         }
         void AppendNativeActivity(string kind, object data)
         {
@@ -126,14 +127,15 @@ namespace KK_StoryNPCBridge
             {
                 if (activityPeriodId == null) BeginUncontrolledPeriod("claim_snapshot");
                 SampleUncontrolledActivity(); lastHandoverReport = BuildActivityReport(true);
-                if (ownedNpc.AI.result != null && ownedNpc.AI.result.actionNo >= 0) autonomousActionBeforeClaim = ownedNpc.AI.result.actionNo;
-                ownedController = session; claimedPosition = ownedNpc.calcPosition; claimedYaw = ownedRoot.transform.eulerAngles.y;
+                if (ownedNpc != null && ownedNpc.AI != null && ownedNpc.AI.result != null && ownedNpc.AI.result.actionNo >= 0) autonomousActionBeforeClaim = ownedNpc.AI.result.actionNo;
+                ownedController = session; claimedPosition = ownedNpc != null ? ownedNpc.calcPosition : Vector3.zero; claimedYaw = ownedRoot != null ? ownedRoot.transform.eulerAngles.y : 0;
+                CreateResumeToken();
                 resumeNativePending = false;
-                if (!SceneBusy && Mode == "roaming") SetNativeIdle(); else stopOnRoam = true;
+                if (!SceneBusy && Mode == "roaming" && ownedNpc != null && ownedNpc.AI != null) SetNativeIdle(); else stopOnRoam = true;
                 activityDirty = true; FlushAutonomyJournal();
                 AddEvent("controller_claimed", Json.Map("reportId", lastHandoverReport["reportId"], "summary", HandoverSummary()));
             }
-            var result = (Dictionary<string, object>)ReadOwnedActor(); result["handoverReport"] = lastHandoverReport; return result;
+            return ControlReply();
         }
         void TryResumeNativeAutonomy()
         {

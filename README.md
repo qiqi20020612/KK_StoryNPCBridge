@@ -8,7 +8,7 @@ A BepInEx 5 plugin that exposes native story-mode NPC state and control through 
 
 **The plugin currently injects one new bridge character. Only this injected character can be controlled.** Its actor ID is `bridge:main`, and its initial appearance uses the game's default female model, `ill_Default_Female`.
 
-Existing story NPCs cannot currently be selected or taken over. The player is not a control target. When the bridge character is unclaimed, the game manages her with its native AI. Claiming her gives the controller control of her actions until release or disconnection.
+Existing story NPCs cannot currently be selected or taken over. The player is not a control target. When the bridge character is unclaimed, the game manages her with its native AI. Normal release restores native AI; an unexpected disconnect first reserves control for a bounded reconnection period.
 
 ## Planned NPC targeting
 
@@ -22,13 +22,17 @@ These targeting modes are planned features, not capabilities of the current vers
 
 ## Features
 
-- Read and modify character stats, expressions, native actions, animation and position.
+- Read player names, native game periods, weekdays and explicit day-ending/day-start events.
+- Read and modify native scores, relationships, club membership and promised-date flags in any scene, with actual native results returned.
+- Keep bridge progress independently for each story save; first creation starts with zero scores/counters and false exposed state flags.
+- Control expressions and body animation during roaming and native conversations.
 - Schedule native actions immediately or queue the next tasks.
 - Walk to the player using native navigation, including cross-map routes.
-- Use native ADV dialogue with user input, external-response waiting and NPC-initiated invitations.
+- Use native ADV dialogue with user input, external-response waiting, NPC-initiated invitations and long replies paginated at 50 text elements per page.
 - Report native dialogue choices and distinguish touch from look while preserving original body reactions.
 - Return activity reports directly when taking control; movement history records map changes only.
 - Discover English ID descriptions and reuse returned catalog entries, keys, numeric IDs or request templates in calls.
+- Hold position after an unexpected disconnect and safely resume within a configurable grace period (60 seconds by default).
 
 Production integrations use API replies and events. In-game UI is limited to an optional developer panel and essential dialogue controls. The plugin does not add status popups or an activity-report interface.
 
@@ -54,7 +58,9 @@ Copy the single plugin DLL directly into the game's plugin directory:
 No plugin subdirectory is needed. On first launch, the plugin creates:
 
 - `BepInEx/config/KK_StoryNPCBridge.cfg`: configuration and the local authentication token.
-- `BepInEx/config/KK_StoryNPCBridge/`: persistent bridge-character data and the activity journal.
+- `BepInEx/config/KK_StoryNPCBridge/profiles/<save-key>/`: bridge-character data and activity journal for each story save slot.
+
+The profile key is derived from the native save filename. Each slot first initializes exposed scores/counters to `0`, flags to `false`, and the relationship to `stranger` (`-1`, not met). Later loads retain that slot's bridge progress. Profiles are sidecar data and should be backed up with the story saves. Earlier unscoped profile files are left untouched and are not imported into every save.
 
 ## UI language
 
@@ -81,7 +87,11 @@ The client reads the port and token from the game's cfg. In its manual shell:
 
 ```text
 list
+player
+time
 use 1
+stats
+stat relation=friend isStaff=true isDate=true favor=30
 summon
 get
 report
@@ -89,7 +99,7 @@ release
 quit
 ```
 
-`use 1` claims the injected bridge character and prints the complete handover report. `summon` makes her walk near the player; it does not teleport. Keep the controller connected while tasks run. Closing the controller releases control to native AI.
+`use 1` claims the injected bridge character and prints the complete handover report. `summon` makes her walk near the player; it does not teleport. Keep the controller connected while tasks run. Normal Python client shutdown releases control immediately. Unexpected transport or heartbeat loss starts the reconnection grace period; use the private credentials returned by `claim` to resume (see the API reference).
 
 Applications can also set `KOIKATU_GAME_ROOT` or pass `game_root` to `BridgeClient`:
 
@@ -128,7 +138,7 @@ The output is `artifacts/build/KK_StoryNPCBridge.dll`, targeting .NET Framework 
 To create the release DLL, installation ZIP and SHA-256 checksums:
 
 ```powershell
-pwsh -File tools/package-release.ps1 -Tag v1.0.0
+pwsh -File tools/package-release.ps1 -Tag v1.1.0
 ```
 
 GitHub Actions builds pushes and pull requests. Pushing a `v<version>` tag builds and publishes a release after checking that the tag matches the DLL version.
@@ -150,9 +160,10 @@ The output is `bin/KK_StoryNPCBridge.dll`. To copy it into the game, close the g
 ## Behavior and limitations
 
 - Actor writes require a claim and the current generation. Refresh state after loading another story.
-- Releasing control or losing the controller connection restores native AI after any pending dialogue or scene cleanup.
+- Releasing control restores native AI after any pending dialogue or scene cleanup. Unexpected disconnects hold position for `Bridge.ReconnectGraceSeconds` (default 60, range 5–600) before restoring native AI. Recovery applies to the same running story/generation, not a game restart.
 - Runtime catalogs describe available references; occupied points, targets and story conditions can still prevent an action from starting.
-- Expressions depend on the loaded character model. Animator state hashes and native scheduler action IDs are different domains.
+- Expressions depend on the loaded character model. Refresh animation catalogs when entering or leaving a conversation; native talk uses its own Animator. Animator state hashes and native scheduler action IDs are different domains.
+- The native game provides weekdays rather than an absolute calendar date. The plugin reports an observed day counter per save. Native ADV displays supplementary Unicode characters such as Emoji as `□` to avoid a Unity text error; API history/events retain the original text.
 - Activity reports retain the latest 256 entries and include counts for omitted records. They do not record same-map walking trajectories.
 - The bridge provides structured events and accepts supplied dialogue. It does not call a model or create prompts.
 

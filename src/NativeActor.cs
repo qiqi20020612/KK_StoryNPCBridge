@@ -52,16 +52,22 @@ namespace KK_StoryNPCBridge
         { if (__result && Current != null && Manager.Game.IsInstance() && ReferenceEquals(__instance, Manager.Game.Instance.saveData)) Current.EnsureNativeHeroine(__instance); }
         static void BeforeActionInit()
         { if (Current != null && Manager.Game.IsInstance()) Current.EnsureNativeHeroine(Manager.Game.Instance.saveData); }
-        static void BeforeNativeSave(SaveData __instance, ref List<SaveData.Heroine> __state)
+        static void BeforeNativeSave(SaveData __instance, FileStream __0, ref List<SaveData.Heroine> __state)
         {
             if (Current == null || __instance != Current.ownedSave || Current.ownedHeroine == null) return;
-            Current.SyncOwnedStats(); Current.SaveOwnedProfile(); Current.SaveNativeProfile();
+            Current.SyncOwnedStats(); Current.SaveNativeProfile(); Current.SaveOwnedProfile();
             __state = __instance.heroineList;
             __instance.heroineList = new List<SaveData.Heroine>(__state);
             __instance.heroineList.Remove(Current.ownedHeroine);
         }
-        static void AfterNativeSave(SaveData __instance, List<SaveData.Heroine> __state)
-        { if (__state != null) __instance.heroineList = __state; }
+        static void AfterNativeSave(SaveData __instance, FileStream __0, List<SaveData.Heroine> __state, Exception __exception)
+        {
+            if (__state == null) return;
+            __instance.heroineList = __state;
+            if (Current == null || __exception != null) return;
+            try { Current.SaveProfileForNativeSlot(__0); }
+            catch (Exception e) { Current.Logger.LogWarning("Story profile save: " + e.Message); Current.AddEvent("profile_save_failed", Json.Map("save", Path.GetFileName(__0.Name), "error", e.Message)); }
+        }
         static void BeforeDesireSave(ActionControl __instance, ref IDictionary __state)
         {
             if (Current == null || Current.ownedHeroine == null) return;
@@ -116,6 +122,10 @@ namespace KK_StoryNPCBridge
             if (save == null || save.player == null) return;
             if (ownedSave == save && ownedHeroine != null && save.heroineList.Contains(ownedHeroine)) return;
             if (!Manager.Character.IsInstance()) return;
+            if (ownedHeroine != null) { SyncOwnedStats(); SaveNativeProfile(); SaveOwnedProfile(); FlushAutonomyJournal(); }
+            ClearControlRecovery();
+            if (DialogueActive) ResetAdvDialogue("world_changed");
+            SelectStoryProfile();
             ownedController = null; ownedNpc = null; ownedRoot = null; ownedCha = null; ownedAgent = null;
             ownedReady = false; ownedMoving = false; nativeTalkPending = false; faceOverride = false; animationOverride = false; disposingOwned = false;
             if (idlePoint != null) UnityEngine.Object.Destroy(idlePoint.gameObject); idlePoint = null;
@@ -140,9 +150,12 @@ namespace KK_StoryNPCBridge
             heroine.charFileInitialized = true;
             heroine.charFile.parameter.lastname = ""; heroine.charFile.parameter.firstname = ownedName; heroine.charFile.parameter.nickname = ownedName;
             heroine.schoolClass = save.player.schoolClass; heroine.schoolClassIndex = seat;
-            ownedHeroine = heroine; ownedSave = save; ApplyOwnedStats();
+            ownedHeroine = heroine; ownedSave = save;
+            if (!File.Exists(NativeProfilePath)) ApplyOwnedStats();
+            SyncOwnedStats(); SaveOwnedProfile(); SaveNativeProfile();
             save.heroineList.Add(heroine);
             ownedGeneration = Guid.NewGuid().ToString("N");
+            AddEvent("actor_initialized", Json.Map("profile", ReadStoryProfile(), "stats", new Dictionary<string, object>(ownedStats)));
             nativeQueue.Clear(); activeTask = null; initialSummonPending = false; approachState = "none";
             resumeNativePending = false; BeginUncontrolledPeriod("world_loaded");
             ownedError = null;
@@ -227,25 +240,20 @@ namespace KK_StoryNPCBridge
         {
             if (ownedHeroine == null) return;
             NPC next = ownedHeroine.charaBase as NPC;
-            if (next == null) return;
+            if (next == null)
+            {
+                if (OwnedTalkActive && ownedHeroine.chaCtrl != null)
+                { ownedCha = ownedHeroine.chaCtrl; ownedReady = ownedCha.loadEnd; SyncOwnedStats(); }
+                return;
+            }
             bool changed = ownedNpc != next;
-            ownedNpc = next; ownedRoot = next.gameObject; ownedCha = next.chaCtrl; ownedAgent = next.agent; ownedMap = next.mapNo;
+            ownedNpc = next; ownedRoot = next.gameObject;
+            ownedCha = OwnedTalkActive && ownedHeroine.chaCtrl != null ? ownedHeroine.chaCtrl : next.chaCtrl;
+            ownedAgent = next.agent; ownedMap = next.mapNo;
             lastNativePosition = next.calcPosition;
             ownedReady = next.initialized && ownedCha != null && ownedCha.loadEnd;
             if (changed) { rosterCountAtSpawn = Manager.Game.Instance.HeroineList.Count; npcCountAtSpawn = action.npcList.Count; AddEvent("actor_spawned", Json.Map("native", true)); }
             SyncOwnedStats();
-        }
-        void SyncOwnedStats()
-        {
-            if (ownedHeroine == null) return;
-            ownedStats["favor"] = ownedHeroine.favor; ownedStats["intimacy"] = ownedHeroine.intimacy;
-            ownedStats["anger"] = ownedHeroine.anger; ownedStats["isAnger"] = ownedHeroine.isAnger;
-        }
-        void ApplyOwnedStats()
-        {
-            if (ownedHeroine == null) return;
-            ownedHeroine.favor = Convert.ToInt32(ownedStats["favor"]); ownedHeroine.intimacy = Convert.ToInt32(ownedStats["intimacy"]);
-            ownedHeroine.anger = Convert.ToInt32(ownedStats["anger"]); ownedHeroine.isAnger = (bool)ownedStats["isAnger"];
         }
         object ReadNativeActions()
         {
@@ -369,10 +377,12 @@ namespace KK_StoryNPCBridge
             TalkScene talk = UnityEngine.Object.FindObjectOfType<TalkScene>();
             if (talk == null || !ReferenceEquals(talk.targetHeroine, ownedHeroine)) throw new BridgeException("wrong_context", "Open the native conversation with the bridge NPC first");
             if (!NativeTalkReady(talk)) throw new BridgeException("busy", "Wait for the native conversation options");
+            ValidateDialogueText(text);
             if (text.Length > 1000) throw new BridgeException("invalid_argument", "Text exceeds 1000 characters");
             var list = ADV.Program.Transfer.NewList(false, false);
             list.Add(ADV.Program.Transfer.Create(true, ADV.Command.CharaChange, "-2", "true"));
-            list.Add(ADV.Program.Transfer.Text("[H名]", text)); list.Add(ADV.Program.Transfer.Close());
+            foreach (string page in BeginAdvPages(text)) list.Add(ADV.Program.Transfer.Text("[H名]", page));
+            list.Add(ADV.Program.Transfer.Close());
             nativeTextBusy = true;
             try
             {

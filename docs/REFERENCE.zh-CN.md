@@ -4,7 +4,63 @@
 
 以下编号映射基于日版原版 Koikatu 与默认女性模型（`ill_Default_Female`）。可用 ID、模型特有表情及游戏当前条件以实时 `catalog` 为准。原生形变标识是源数据；英文表情标签用于解释这些标识，本页提供对应的中文说明。接口返回的名称和描述仍为英文。
 
-[API 命令与引用参数规则](../API.zh-CN.md)（[English](../API.md)）。在对应的参数领域中，可将列出的运行时目录项作为对象传回，也可以使用它的 `key` 或数值 `id`。队列任务使用相同的行动与地图编号；任务 ID 本身则是每次执行的唯一标识。
+[API 命令与引用参数规则](../API.zh-CN.md)（[English](../API.md)）。可调用的引用接受对应参数领域中的返回对象、`key` 或数值 `id`；游戏时间引用仅供读取。队列任务使用相同的行动与地图编号；任务 ID 本身则是每次执行的唯一标识。
+
+## 关系
+
+用于 `set_stats.changes.relation`。关系引用会一并更新见面、朋友和恋人标志；原生 getter 根据这些标志派生关系。字段类型、范围和所有可写状态见[原生属性与关系](../API.zh-CN.md#原生属性与关系)。
+
+| ID | Key | 中文说明 |
+| --- | --- | --- |
+| -1 | `stranger` | 尚未认识 |
+| 0 | `acquaintance` | 认识 |
+| 1 | `friend` | 朋友 |
+| 2 | `girlfriend` | 恋人 |
+
+## 游戏时间
+
+这些编号用于解释 `gameTime` 观测结果，不是调度行动编号或修改时钟的命令。游戏提供星期，没有绝对日历日期。计数与事件见[玩家与原生游戏时间](../API.zh-CN.md#玩家与原生游戏时间)。
+
+### 原生阶段
+
+| ID | Key | 中文说明 |
+| --- | --- | --- |
+| 0 | `wake_up` | 起床 |
+| 1 | `morning` | 早晨 |
+| 2 | `going_to_school` | 上学 |
+| 3 | `homeroom_1` | 上午班会 |
+| 4 | `lesson_1` | 上午课程 |
+| 5 | `lunch_time` | 午休 |
+| 6 | `lesson_2` | 下午课程 |
+| 7 | `homeroom_2` | 下午班会 |
+| 8 | `staff_time` | 社团时间 |
+| 9 | `after_school` | 放学后 |
+| 10 | `going_home` | 回家 |
+| 11 | `my_house` | 在家／夜晚 |
+
+### UI 时间段
+
+阶段 0–4 对应时间段 0，5–7 对应 1，8 对应 2，9–10 对应 3，11 对应 4。
+
+| ID | Key | 中文说明 |
+| --- | --- | --- |
+| 0 | `morning` | 上午 |
+| 1 | `midday` | 午休／下午课程 |
+| 2 | `staff_time` | 社团时间 |
+| 3 | `after_school` | 放学后 |
+| 4 | `night` | 夜晚 |
+
+### 星期
+
+| ID | Key | 中文说明 |
+| --- | --- | --- |
+| 0 | `monday` | 星期一 |
+| 1 | `tuesday` | 星期二 |
+| 2 | `wednesday` | 星期三 |
+| 3 | `thursday` | 星期四 |
+| 4 | `friday` | 星期五 |
+| 5 | `saturday` | 星期六 |
+| 6 | `holiday` | 星期日／假日 |
 
 ## 原生调度行动
 
@@ -211,7 +267,7 @@
 
 ## Animator 状态
 
-用于 `play_animation.state`。有符号 ID 是第 0 层的 `Animator.StringToHash(key)`，不是调度行动 ID。播放动画不会执行游戏任务、添加道具或进行导航。运行时会确认所列状态存在；这一发现列表不是完整的 Studio 动画库。
+用于 `play_animation.state`。有符号 ID 是第 0 层的 `Animator.StringToHash(key)`，不是调度行动 ID。播放动画不会执行游戏任务、添加道具或进行导航。运行时会确认所列状态存在；这一发现列表不是完整的 Studio 动画库。这些示例使用漫游模型；原生对话使用另一套 Animator，进入或退出对话后请刷新 `animation_catalog`，并检查每项的 `context`。`animation.state` 和哈希报告实际播放状态。
 
 | 有符号状态哈希 | 状态 key | 中文说明 |
 | --- | --- | --- |

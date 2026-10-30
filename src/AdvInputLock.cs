@@ -14,7 +14,7 @@ namespace KK_StoryNPCBridge
         bool advInputLocked;
         float nextPlayerLineAdvance;
         int blockedAdvRequests;
-        bool AdvMouseBlocked { get { return WaitingModel; } }
+        bool AdvMouseBlocked { get { return WaitingModel || Recovering && OwnedTalkActive && dialoguePhase != "ending"; } }
         Rect AdvWaitingArea { get { return new Rect((Screen.width - Mathf.Min(1000, Screen.width - 48)) / 2, Mathf.Max(36, Screen.height - 410), Mathf.Min(1000, Screen.width - 48), 82); } }
         Rect AdvCancelRect { get { Rect area = AdvWaitingArea; return new Rect(area.x + 8, area.y + 34, area.width - 16, 30); } }
 
@@ -35,6 +35,7 @@ namespace KK_StoryNPCBridge
         static bool AllowAdvNextLine(ADV.TextScenario __instance)
         {
             Plugin p = Current;
+            if (p != null && p.Recovering && p.OwnedTalkActive && p.dialoguePhase != "ending") { p.blockedAdvRequests++; return false; }
             if (p == null || p.managedWait == null || p.releaseAdvHold) return true;
             ADV.TextScenario held = p.ManagedAdvScenario();
             if (held != __instance) return true;
@@ -62,7 +63,7 @@ namespace KK_StoryNPCBridge
                 var cancel = new GameObject("EndDialogue", typeof(RectTransform), typeof(Image), typeof(Button)); cancel.transform.SetParent(advInputShield.transform, false);
                 cancel.GetComponent<Image>().color = new Color(0.07f, 0.1f, 0.15f, 0.98f);
                 advCancelButton = cancel.GetComponent<Button>(); advCancelButton.targetGraphic = cancel.GetComponent<Image>();
-                advCancelButton.onClick.AddListener(delegate { if (AdvMouseBlocked) EndAdvDialogue("user_closed"); });
+                advCancelButton.onClick.AddListener(delegate { if (AdvMouseBlocked) CancelDisplayedDialogue(); });
                 var label = new GameObject("Label", typeof(RectTransform), typeof(Text)); label.transform.SetParent(cancel.transform, false);
                 var labelRect = label.GetComponent<RectTransform>(); labelRect.anchorMin = Vector2.zero; labelRect.anchorMax = Vector2.one; labelRect.offsetMin = labelRect.offsetMax = Vector2.zero;
                 if (panelFont == null) panelFont = Font.CreateDynamicFontFromOSFont("Microsoft YaHei", 16);
@@ -94,6 +95,7 @@ namespace KK_StoryNPCBridge
         }
         void TickPlayerLineWhileWaiting()
         {
+            if (Recovering) return;
             // Native preparation and the submitted player's text must not require locked input.
             bool opening = dialoguePhase == "opening" && WaitingModel;
             if ((!opening && dialoguePhase != "user_speaking") || advSawHold || SceneBusy || Time.realtimeSinceStartup < nextPlayerLineAdvance) return;

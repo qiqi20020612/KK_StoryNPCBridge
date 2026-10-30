@@ -5,6 +5,7 @@ namespace KK_StoryNPCBridge
     public sealed partial class Plugin
     {
         static readonly Dictionary<string, string> EnglishUi = new Dictionary<string, string> {
+            { "等待控制器重连，剩余秒数：", "Waiting for controller reconnection; seconds remaining: " },
             { "   |   地图 ", "   |   Map " },
             { "   |   身份 ", "   |   Actor " },
             { " · 专属 NPC · ", " · Dedicated NPC · " },

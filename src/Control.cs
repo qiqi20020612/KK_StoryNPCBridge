@@ -37,17 +37,6 @@ namespace KK_StoryNPCBridge
             var items = value as IList; if (items == null || items.Count != 3) throw new BridgeException("invalid_argument", "position must be [x,y,z]");
             return new Vector3((float)Number(items[0], -10000, 10000, "x"), (float)Number(items[1], -10000, 10000, "y"), (float)Number(items[2], -10000, 10000, "z"));
         }
-        static void ValidateStats(Dictionary<string, object> changes)
-        {
-            if (changes.Count == 0) throw new BridgeException("invalid_argument", "changes is empty");
-            foreach (var p in changes)
-            {
-                if (p.Key == "isAnger") Boolean(p.Value, p.Key);
-                else if (p.Key == "favor" || p.Key == "intimacy" || p.Key == "anger")
-                { double n = Number(p.Value, 0, 100, p.Key); if (n != Math.Floor(n)) throw new BridgeException("invalid_argument", "Stats must be integers"); }
-                else throw new BridgeException("unsupported_field", p.Key);
-            }
-        }
         void ValidateFace(Dictionary<string, object> changes)
         {
             foreach (var p in changes)
@@ -75,6 +64,8 @@ namespace KK_StoryNPCBridge
         {
             string op = Text(d, "op");
             if (op == "status" || op == "list") return Snapshot();
+            if (op == "stat_catalog") return ReadStatCatalog();
+            if (op == "time_catalog") return ReadTimeCatalog();
             if (op == "catalog") return ReadCatalog();
             if (op == "map_catalog") return ReadMapCatalog();
             if (op.StartsWith("game.", StringComparison.Ordinal)) return ExecuteGameCommand(op, d);
@@ -82,6 +73,8 @@ namespace KK_StoryNPCBridge
             { if (panelVisible != (op == "panel_open")) TogglePanel(); return Json.Map("panelVisible", panelVisible); }
             if (op == "release_all")
             { if (ownedController == session) ReleaseOwned("released", false); return Json.Map("released", true, "activityReport", CurrentActivityReport()); }
+            if (op == "disconnect")
+            { if (ownedController == session) ReleaseOwned("disconnected", false); return Json.Map("disconnected", true); }
             if (Text(d, "target") != ActorId) throw new BridgeException("not_plugin_actor", "Only bridge:main can be controlled; saved NPCs are excluded");
             if (op == "get") return ReadOwnedActor();
             if (op == "native_interaction_status") return ReadNativeInteraction();
@@ -91,20 +84,30 @@ namespace KK_StoryNPCBridge
             if (op == "expression_catalog") return ReadExpressionCatalog();
             if (op == "animation_catalog") return ReadAnimationCatalog();
             if (op == "spawn" || op == "despawn" || op == "respawn") throw new BridgeException("native_lifecycle", "Native NPC lifecycle is managed by story loading; reload the story to recreate her");
-            bool dialogueCommand = op.StartsWith("dialogue_", StringComparison.Ordinal) || op == "model_reply" || op == "model_error" || op == "say";
-            bool talkCommand = op == "claim" || op == "release" || op == "say_native" || dialogueCommand;
-            if (ownedNpc == null || ownedNpc.AI == null || SceneBusy && !(DialogueActive && dialogueCommand) || Mode != "roaming" && !(talkCommand && Mode == "talk")) throw new BridgeException("not_ready", "This command requires story roaming or the target's native conversation");
             object generation;
             if (!d.TryGetValue("generation", out generation) || !(generation is string)) throw new BridgeException("generation_required", "Use the current actor generation from get/list");
             if ((string)generation != ownedGeneration) throw new BridgeException("stale_generation", "Actor was recreated; refresh state before issuing another command");
+            if (op == "resume") return ResumeControl(d, session);
             if (op == "claim")
             {
-                if (ownedNpc.AI.result == null) throw new BridgeException("not_ready", "Wait for the native NPC's initial schedule");
+                if (ownedHeroine == null || !Manager.Game.IsInstance() || !ReferenceEquals(ownedSave, Manager.Game.Instance.saveData))
+                    throw new BridgeException("not_ready", "Load a story before claiming its bridge NPC");
                 return ClaimOwnedActor(session);
             }
-            if (op == "dialogue_reply") return SubmitAdvInput(d);
-            if (op == "model_reply" || op == "model_error" || op == "dialogue_respond" || op == "dialogue_fail") return ReceiveExternalReply(d, op == "model_error" || op == "dialogue_fail");
+            if (op == "set_stats") { RequireOwner(session); return SetOwnedStats(Object(d, "changes")); }
+            if (op == "release")
+            {
+                RequireOwner(session); object restore;
+                bool revert = d.TryGetValue("restorePosition", out restore) && Boolean(restore, "restorePosition");
+                ReleaseOwned("released", revert); return ReadOwnedActor();
+            }
+            bool dialogueCommand = op.StartsWith("dialogue_", StringComparison.Ordinal) || op == "model_reply" || op == "model_error" || op == "say";
+            bool visualCommand = op == "set_expression" || op == "clear_expression" || op == "play_animation";
+            bool talkCommand = op == "claim" || op == "say_native" || dialogueCommand || visualCommand;
+            if (ownedNpc == null || ownedNpc.AI == null || SceneBusy && !(DialogueActive && dialogueCommand) || Mode != "roaming" && !(talkCommand && Mode == "talk")) throw new BridgeException("not_ready", "This command requires story roaming or the target's native conversation");
+            if (op == "dialogue_reply") { if (Recovering) throw new BridgeException("controller_disconnected", "Wait for controller recovery"); return SubmitAdvInput(d); }
             RequireOwner(session);
+            if (op == "model_reply" || op == "model_error" || op == "dialogue_respond" || op == "dialogue_fail") return ReceiveExternalReply(d, op == "model_error" || op == "dialogue_fail");
             if (op == "say_native") { if (DialogueActive) throw new BridgeException("managed_dialogue", "Use model_reply or say in an active ADV conversation"); return SayNative(Text(d, "text")); }
             if (op == "dialogue_close" || op == "dialogue_retry" || op == "dialogue_request_input" || op == "dialogue_wait_model" || op == "dialogue_wait") return DialogueControl(op, d);
             if (op == "dialogue_open") return OpenAdvDialogue(d);
@@ -116,22 +119,8 @@ namespace KK_StoryNPCBridge
                 string text = Text(d, "text"); ValidateDialogueText(text); dialogueTurn++;
                 QueueAdvLine("npc", text, OptionalBool(d, "requestInput", true) ? "awaiting_input" : "ready"); SetDialoguePhase("npc_speaking"); return ReadDialogue();
             }
-            if (op == "release")
-            {
-                object restore; bool revert = d.TryGetValue("restorePosition", out restore) && Boolean(restore, "restorePosition");
-                ReleaseOwned("released", revert); return ReadOwnedActor();
-            }
             if (op == "set_action" || op == "queue_action" || op == "set_desire" || op == "clear_queue" || op == "native_talk" || op == "summon" || op == "walk_to_player") return ExecuteNativeCommand(op, d);
-            if (op == "set_stats")
-            {
-                var changes = Object(d, "changes"); ValidateStats(changes);
-                var before = ownedStats; ownedStats = new Dictionary<string, object>(before);
-                foreach (var p in changes) ownedStats[p.Key] = p.Value;
-                if (changes.ContainsKey("anger") && !changes.ContainsKey("isAnger")) ownedStats["isAnger"] = Convert.ToInt32(ownedStats["anger"]) > 0;
-                try { SaveOwnedProfile(); ApplyOwnedStats(); } catch { ownedStats = before; throw; }
-                AddEvent("stats_changed", changes); return ReadOwnedActor();
-            }
-            RequireActor();
+            if (visualCommand) RequireVisualActor(); else RequireActor();
             if (op == "set_expression" || op == "clear_expression")
             {
                 var changes = op == "clear_expression" ? NeutralFace() : NormalizeFace(Object(d, "changes")); ValidateFace(changes);
@@ -155,7 +144,7 @@ namespace KK_StoryNPCBridge
                 object reference; if (!d.TryGetValue("state", out reference)) throw new BridgeException("invalid_argument", "state reference required");
                 string state = AnimationState(reference);
                 if (!ownedCha.animBody.HasState(0, Animator.StringToHash(state))) throw new BridgeException("unknown_animation", state);
-                StopOwnedMotion("cancelled"); PlayOwnedAnimation(state); ownedState = "animation"; return ReadOwnedActor();
+                if (Mode == "roaming") StopOwnedMotion("cancelled"); PlayOwnedAnimation(state); ownedState = "animation"; return ReadOwnedActor();
             }
             if (op == "move" || op == "teleport") return MoveOwned(d, op);
             throw new BridgeException("unsupported_operation", op);

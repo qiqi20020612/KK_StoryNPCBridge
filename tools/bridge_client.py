@@ -43,6 +43,7 @@ class BridgeClient:
         self._pending = {}
         self._counter = itertools.count(1)
         self._closed = threading.Event()
+        self._closing = False
         self.last_snapshot = None
         self._reader = threading.Thread(target=self._read, daemon=True)
         self._reader.start()
@@ -84,7 +85,7 @@ class BridgeClient:
             try:
                 self.request("ping", timeout=4)
             except (OSError, RuntimeError, TimeoutError):
-                self.close()
+                self.close(graceful=False)
                 return
 
     def request(self, op, timeout=7, **parameters):
@@ -112,7 +113,15 @@ class BridgeClient:
             with self._lock:
                 self._pending.pop(identifier, None)
 
-    def close(self):
+    def close(self, graceful=True):
+        if self._closing:
+            return
+        self._closing = True
+        if graceful and not self._closed.is_set():
+            try:
+                self.request("disconnect", timeout=2)
+            except (OSError, RuntimeError, TimeoutError):
+                pass
         self._closed.set()
         try:
             self.socket.shutdown(socket.SHUT_RDWR)
@@ -132,7 +141,7 @@ def show(value):
 
 
 def shell(client):
-    print("Dedicated NPC: list | use 1 | get | report | stat favor=20 | face mouth=1 mouthOpen=0.3")
+    print("Dedicated NPC: list | use 1 | get | report | player | time | stats | stat favor=20 relation=friend isStaff=true | face mouth=1 mouthOpen=0.3")
     print("move x y z | warp x y z | turn degrees | stop | anim state | say text | dialogue text | reply text")
     print("release | events | quit. Closing the client releases temporary NPC control.")
     print("actions | action ID [map] [seconds] | queue ID [map] [seconds] | desire ID 0..100")
@@ -168,6 +177,10 @@ def shell(client):
                 show((client.last_snapshot or client.request("status"))["events"])
             elif command == "report":
                 show(client.request("status")["actors"][0]["activityReport"])
+            elif command in {"player", "time"}:
+                show(client.request("status")["player" if command == "player" else "gameTime"])
+            elif command == "stats":
+                show(client.request("stat_catalog"))
             elif command in {"respond", "model"}:
                 actor = client.request("status")["actors"][0]
                 conversation = actor["dialogue"]
@@ -180,7 +193,7 @@ def shell(client):
                 changes = {}
                 for arg in args:
                     key, value = arg.split("=", 1)
-                    changes[key] = json.loads(value)
+                    changes[key] = value if command == "stat" and key == "relation" and value in {"stranger", "acquaintance", "friend", "girlfriend"} else json.loads(value)
                 show(client.request("set_stats" if command == "stat" else "set_expression", target=target, generation=generation, changes=changes))
             elif command in {"move", "warp"}:
                 show(client.request("move" if command == "move" else "teleport", target=target, generation=generation, position=[float(x) for x in args]))

@@ -67,10 +67,11 @@ namespace KK_StoryNPCBridge
                 "inputEnabled", dialoguePhase == "awaiting_input", "waitingReply", WaitingModel, "waitingModel", WaitingModel, "mouseBlocked", AdvMouseBlocked, "advHeld", managedWait != null && !releaseAdvHold,
                 "endButtonRect", AdvMouseBlocked ? new float[] { AdvCancelRect.x, AdvCancelRect.y, AdvCancelRect.width, AdvCancelRect.height, Screen.width, Screen.height } : null,
                 "blockedAdvRequests", blockedAdvRequests,
+                "pagination", ReadAdvPagination(),
                 "requestId", modelRequestId, "requestKind", requestKind, "userText", requestUserText,
                 "nativeCommand", requestNativeCommand, "nativeMenusAvailable", nativeCommandMenusShown,
                 "responseReceived", modelReceived, "modelReplyReceived", modelReceived, "error", dialogueError, "errorCode", dialogueError == "model_timeout" ? "reply_timeout" : dialogueError,
-                "waitSeconds", modelRequestId == null ? 0 : Time.realtimeSinceStartup - modelRequestedAt,
+                "waitSeconds", modelRequestId == null ? 0 : (Recovering ? recoveryStartedAt : Time.realtimeSinceStartup) - modelRequestedAt,
                 "timeoutSeconds", modelTimeoutSeconds, "history", dialogueHistory.ToArray());
         }
         static string OptionalText(Dictionary<string, object> d, string key, string fallback)
@@ -78,7 +79,16 @@ namespace KK_StoryNPCBridge
         static bool OptionalBool(Dictionary<string, object> d, string key, bool fallback)
         { object value; return d.TryGetValue(key, out value) ? Boolean(value, key) : fallback; }
         static void ValidateDialogueText(string text)
-        { if (text == null || text.Trim().Length == 0 || text.Length > 4000) throw new BridgeException("invalid_argument", "Dialogue text must contain 1-4000 characters"); }
+        {
+            if (text == null || text.Trim().Length == 0 || text.Length > 4000) throw new BridgeException("invalid_argument", "Dialogue text must contain 1-4000 characters");
+            for (int i = 0; i < text.Length; i++)
+                if (char.IsSurrogate(text[i]))
+                {
+                    if (!char.IsHighSurrogate(text[i]) || i + 1 >= text.Length || !char.IsLowSurrogate(text[i + 1]))
+                        throw new BridgeException("invalid_argument", "Dialogue text contains an unpaired UTF-16 surrogate");
+                    i++;
+                }
+        }
         void RequireConversation(Dictionary<string, object> d)
         {
             if (!DialogueActive || Text(d, "conversationId") != dialogueId) throw new BridgeException("stale_conversation", "Refresh the current conversation ID");
@@ -188,16 +198,6 @@ namespace KK_StoryNPCBridge
             queuedAdvSpeaker = speaker; queuedAdvText = text; queuedAdvAfter = after;
             releaseAdvHold = true;
         }
-        static IEnumerable<string> AdvPages(string text)
-        {
-            int position = 0;
-            while (position < text.Length)
-            {
-                int length = Math.Min(120, text.Length - position);
-                if (position + length < text.Length && char.IsHighSurrogate(text[position + length - 1])) length--;
-                yield return text.Substring(position, length); position += length;
-            }
-        }
         void StartManagedAdvLine()
         {
             string text = queuedAdvText, speaker = queuedAdvSpeaker;
@@ -208,7 +208,7 @@ namespace KK_StoryNPCBridge
             list.Add(ADV.Program.Transfer.Create(true, ADV.Command.CharaChange, "-2", "true"));
             if (text.Length > 0)
             {
-                foreach (string page in AdvPages(text)) list.Add(ADV.Program.Transfer.Text(speaker == "player" ? Manager.Game.Instance.saveData.player.Name : "[H名]", page));
+                foreach (string page in BeginAdvPages(text)) list.Add(ADV.Program.Transfer.Text(speaker == "player" ? Manager.Game.Instance.saveData.player.Name : "[H名]", page));
                 if (speaker == "npc") { AddDialogueMessage("assistant", text); AddEvent("npc_dialogue", Json.Map("conversationId", dialogueId, "turn", dialogueTurn, "speaker", ownedName, "text", text, "channel", "native_adv")); }
             }
             else { list.Add(ADV.Program.Transfer.Create(true, ADV.Command.TextClear)); list.Add(ADV.Program.Transfer.Create(true, ADV.Command.WindowActive, "true", "1")); }
@@ -250,6 +250,7 @@ namespace KK_StoryNPCBridge
             bool host = currentTalk != null && ReferenceEquals(currentTalk.targetHeroine, ownedHeroine);
             if (host) dialogueHostSeen = true;
             if (action == null || dialogueHostSeen && !host && !nativeTalkPending) { ResetAdvDialogue("world_or_conversation_closed"); return; }
+            if (Recovering && dialoguePhase != "ending") return;
             if (!dialogueHostSeen && Time.realtimeSinceStartup - dialogueOpenedAt > (npcInvitationPending ? 180 : 45)) { EndAdvDialogue("opening_timeout"); }
             if (npcInvitationPending && !host && !nativeTalkPending && !SceneBusy && dialoguePhase != "ending" &&
                 Time.realtimeSinceStartup - dialogueOpenedAt > 1 && ownedNpc != null && ownedNpc.AI.actionNo != 8 && ownedNpc.AI.actionNo != 28)
@@ -305,6 +306,15 @@ namespace KK_StoryNPCBridge
             }
             SyncNativeCommandMenus();
         }
+        void CancelDisplayedDialogue()
+        {
+            if (!DialogueActive && OwnedTalkActive)
+            {
+                InitializeDialogueSession("player", defaultModelTimeoutSeconds);
+                dialogueHostSeen = true; SetDialoguePhase("ready");
+            }
+            EndAdvDialogue("user_closed");
+        }
         void EndAdvDialogue(string reason)
         {
             if (!DialogueActive || dialoguePhase == "ending") return;
@@ -329,12 +339,14 @@ namespace KK_StoryNPCBridge
             npcInvitationPending = false;
             managedWait = null; advLineActive = false; releaseAdvHold = true; queuedAdvText = null; modelRequestId = null; modelReceived = false;
             nativeCommandMenusShown = false;
+            presentedPages.Clear(); displayPages.Clear(); presentedPageIndex = 0; nonBmpFallbacks = 0;
             SetDialoguePhase("closed"); AddEvent("dialogue_closed", Json.Map("conversationId", dialogueId, "reason", reason));
             if (!panelVisible) RestoreCursor();
         }
         void DrawAdvDialogueOverlay()
         {
             if (!DialogueActive) return;
+            if (Recovering) return;
             if (dialoguePhase == "native_reaction") return;
             if (npcInvitationPending && Mode == "roaming" && !nativeTalkPending) return;
             AcquireCursor();
