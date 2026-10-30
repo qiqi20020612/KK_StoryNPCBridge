@@ -6,7 +6,9 @@ namespace KK_StoryNPCBridge
 {
     public sealed partial class Plugin
     {
-        const int AdvPageCharacters = 50;
+        const int AdvPageWidthUnits = 300;
+        const int AdvAsciiWidthUnits = 3;
+        const int AdvNonAsciiWidthUnits = 5;
         readonly List<string> presentedPages = new List<string>();
         readonly List<string> displayPages = new List<string>();
         int presentedPageIndex;
@@ -14,12 +16,16 @@ namespace KK_StoryNPCBridge
         static IEnumerable<string> AdvPages(string text)
         {
             var elements = StringInfo.GetTextElementEnumerator(text);
-            var page = new StringBuilder(); int count = 0;
+            var page = new StringBuilder(); int width = 0;
             while (elements.MoveNext())
             {
-                string element = elements.GetTextElement(); page.Append(element); count++;
-                if (count >= AdvPageCharacters || element == "\n" || element == "\r\n")
-                { yield return page.ToString(); page.Length = 0; count = 0; }
+                string element = elements.GetTextElement();
+                int units = element[0] <= '\u007f' ? AdvAsciiWidthUnits : AdvNonAsciiWidthUnits;
+                if (width + units > AdvPageWidthUnits)
+                { yield return page.ToString(); page.Length = 0; width = 0; }
+                page.Append(element); width += units;
+                if (width >= AdvPageWidthUnits || element == "\n" || element == "\r\n")
+                { yield return page.ToString(); page.Length = 0; width = 0; }
             }
             if (page.Length > 0) yield return page.ToString();
         }
@@ -47,9 +53,13 @@ namespace KK_StoryNPCBridge
             string original = presentedPages[presentedPageIndex];
             presentedPageIndex++;
             AddEvent("dialogue_page", Json.Map("conversationId", DialogueActive ? dialogueId : null, "turn", dialogueTurn,
-                "page", presentedPageIndex, "pageCount", presentedPages.Count, "text", original, "displayText", text, "maxCharacters", AdvPageCharacters));
+                "page", presentedPageIndex, "pageCount", presentedPages.Count, "text", original, "displayText", text,
+                "maxCharacters", AdvPageWidthUnits / AdvAsciiWidthUnits, "maxCjkCharacters", AdvPageWidthUnits / AdvNonAsciiWidthUnits,
+                "maxWidthUnits", AdvPageWidthUnits, "countUnit", "weighted_text_element", "asciiWidthUnits", AdvAsciiWidthUnits, "nonAsciiWidthUnits", AdvNonAsciiWidthUnits));
         }
         object ReadAdvPagination()
-        { return Json.Map("page", presentedPageIndex, "pageCount", presentedPages.Count, "maxCharacters", AdvPageCharacters, "countUnit", "unicode_text_element", "nonBmpFallbacks", nonBmpFallbacks); }
+        { return Json.Map("page", presentedPageIndex, "pageCount", presentedPages.Count,
+            "maxCharacters", AdvPageWidthUnits / AdvAsciiWidthUnits, "maxCjkCharacters", AdvPageWidthUnits / AdvNonAsciiWidthUnits,
+            "maxWidthUnits", AdvPageWidthUnits, "countUnit", "weighted_text_element", "asciiWidthUnits", AdvAsciiWidthUnits, "nonAsciiWidthUnits", AdvNonAsciiWidthUnits, "nonBmpFallbacks", nonBmpFallbacks); }
     }
 }

@@ -19,7 +19,7 @@ namespace KK_StoryNPCBridge
     [BepInProcess("Koikatsu Party.exe")]
     public sealed partial class Plugin : BaseUnityPlugin
     {
-        public const string Version = "1.2.0";
+        public const string Version = "1.3.0";
         public const string PluginGuid = "KK_StoryNPCBridge";
         public const string PluginName = "KK_StoryNPCBridge";
         public const int Protocol = 2;
@@ -195,8 +195,8 @@ namespace KK_StoryNPCBridge
         {
             c.enableExpression = false;
             c.ChangeEyesPtn(Convert.ToInt32(face["eyes"]), true); c.ChangeEyebrowPtn(Convert.ToInt32(face["eyebrow"]), true); c.ChangeMouthPtn(Convert.ToInt32(face["mouth"]), true);
-            c.ChangeEyesOpenMax(Convert.ToSingle(face["eyesOpen"])); c.ChangeMouthOpenMax(Convert.ToSingle(face["mouthOpen"]));
-            c.ChangeEyesBlinkFlag((bool)face["blink"]); c.ChangeEyesShaking(false); c.ChangeMouthFixed(true);
+            c.ChangeEyesOpenMax(Convert.ToSingle(face["eyesOpen"]));
+            c.ChangeEyesBlinkFlag((bool)face["blink"]); c.ChangeEyesShaking(false);
         }
     }
 }

@@ -1,4 +1,4 @@
-# KK_StoryNPCBridge API 1.2.0
+# KK_StoryNPCBridge API 1.3.0
 
 English | [简体中文](API.zh-CN.md)
 
@@ -11,7 +11,7 @@ Use UTF-8 newline-delimited JSON over IPv4 TCP loopback. The default port is `64
 {"id":"2","op":"status"}
 ```
 
-Success is `{ "id": "2", "ok": true, "result": ... }`. Errors are `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`. The protocol version is `2`; the plugin version is `1.2.0`.
+Success is `{ "id": "2", "ok": true, "result": ... }`. Errors are `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`. The protocol version is `2`; the plugin version is `1.3.0`.
 
 Authentication and status replies identify the plugin with `pluginName="KK_StoryNPCBridge"` and `pluginGuid="KK_StoryNPCBridge"`. The single DLL installs directly as `BepInEx/plugins/KK_StoryNPCBridge.dll`.
 
@@ -21,7 +21,7 @@ API descriptions, command explanations and plugin-generated summaries are Englis
 
 ## Actor ownership
 
-Only `bridge:main` is writable. Discover the current `generation` through `status`, `list` or `get`. Actor writes require `target`, `generation` and a successful `claim` by that connection. Stale generations and writes from another owner are rejected. `claim`, `release` and `set_stats` work for a loaded story regardless of scene, map transitions or model availability. Navigation and scheduler writes require roaming; expressions and animation also support the owned character's native conversation. Other scene-dependent operations can return `busy` or `not_ready`.
+Only `bridge:main` is writable. Discover the current `generation` through `status`, `list` or `get`. Actor writes require `target`, `generation` and a successful `claim` by that connection. Stale generations and writes from another owner are rejected. `claim`, `release`, `set_stats` and `adjust_stats` work for a loaded story regardless of scene, map transitions or model availability. Navigation and scheduler writes require roaming; expressions and animation also support the owned character's native conversation. Other scene-dependent operations can return `busy` or `not_ready`.
 
 Unclaimed actors use native AI. `claim` cancels the autonomous task and freezes the activity report. `release`, `release_all` or normal `disconnect` restores native scheduling after scene/dialogue cleanup. Unexpected controller loss first holds position for recovery; native scheduling resumes if that reservation expires. `stop` keeps ownership. Do not treat `nativeAI=true` as proof of autonomy: it means the native executor exists; `nativeAutonomy` identifies who selects actions.
 
@@ -89,11 +89,11 @@ bridge.request('set_expression', changes={
     'eyes': eyes,
     'eyebrow': catalog['expressions']['eyebrow'][0],
     'mouth': catalog['expressions']['mouth'][1],
-    'eyesOpen': 1.0, 'mouthOpen': 0.3, 'blink': False,
+    'eyesOpen': 1.0, 'blink': False,
 }, **p)
 ```
 
-`eyesOpen` and `mouthOpen` are numeric values in `[0,1]`; `blink` is boolean. `clear_expression` clears the override and returns expression management to the native game. The live actor includes numeric `expression`, descriptive `expressionDetails` and pattern-count `expressionLimits`.
+`eyesOpen` is numeric in `[0,1]`; `blink` is boolean. Mouth opening is controlled by the native game: `expression.mouthOpen` is read-only and is not included in writable `controls`. Sending `mouthOpen` in `set_expression.changes` is rejected with `unsupported_field`; a mixed change containing it is rejected before applying any fields. Previously stored mouth-opening values are ignored. Mouth pattern selection (`mouth`) remains writable. The plugin does not write mouth-opening limits or pin the opening rate when applying expressions. `clear_expression` clears the override and returns expression management to the native game. The live actor includes numeric `expression`, descriptive `expressionDetails` and pattern-count `expressionLimits`.
 
 ### Native tasks and maps
 
@@ -141,6 +141,21 @@ bridge.request(**candidate['request'])  # Explicit choice; native conditions sti
 
 Refresh returned requests after a generation change. Scheduler action IDs/keys use the existing action catalog; `plansNo` remains an observational sub-plan value, not a schedulable ID. The manual shell command `plan` works before and after claiming.
 
+### Sample another native NPC's current task
+
+`sample_native_action` takes no parameters beyond `op` (and the transport request ID). Authentication is required; target, generation and ownership are not required. Each call independently and uniformly draws one distinct, initialized native girl from the current story with an AI result and a nonnegative action ID. The bridge NPC is always excluded, including when unclaimed. Other maps are included; characters without a current native task are skipped. Consecutive calls may select the same NPC. Sampling uses a separate random generator and does not advance AI, change native queues/reservations or consume the game's random state. It is an explicit request, not a subscription sample.
+
+The reply includes `available`, `unavailableReason` and `task`. When available, `task` contains `action`, descriptive `actionInfo`, destination `map` / `mapInfo`, `duration=0`, and executable `request` / `queueRequest` targeting the bridge. No source character ID, name, partner, appearance, attributes or coordinates are returned. `plansNo` / `plansName` describe the current native sub-plan; `arrival` and `elapsedSeconds` describe execution. Action and map IDs use the existing catalogs. A missing native destination is `map=-1` (`automatic`). Replay uses the bridge's native duration, not the source NPC's elapsed or remaining time, and still requires ownership, a fresh generation and suitable native conditions. No target or partner is copied; replay may fail even though the source NPC can perform the action.
+
+```python
+sample = bridge.request('sample_native_action')
+if sample['available']:
+    bridge.request('queue_action', task=sample['task'], **p)
+    # Alternatively: bridge.request(**sample['task']['request']) for immediate execution.
+```
+
+When unavailable, `task=null` and `unavailableReason` is `story_not_ready`, `scene_busy` or `no_eligible_native_npc`. A ready conversation allows observation of other NPCs; navigation/action writes still obey their existing scene restrictions. The manual shell command is `sample_action` and also works before claiming.
+
 ### Animations
 
 `animation_catalog` lists native wait-point, talk motion, controller-clip and common states that the active Animator confirms exist on layer 0. It is not a Studio animation database or an exhaustive enumeration of every Unity state. A valid raw state string remains accepted. Each entry includes its `context`, English explanation, signed hash and executable `play_animation` request. Both visual commands address the visible talk model during an owned conversation.
@@ -155,7 +170,7 @@ Playing `Reading` does not automatically find a seat, add a book or run action `
 
 ## Native attributes and relationships
 
-`stat_catalog` (also `catalog.stats`) returns field types, write ranges, English meanings and `relationships`. `actor.stats` contains the actual native values and `actor.relationship` their descriptive relation. Native effects may produce values outside the API write ranges (for example negative anger); observations and saved bridge progress preserve those values. `set_stats.changes` validates all fields before changing state, writes native state, reads it back and returns the complete actor. `stats_changed` carries `requested`, `before` and `actual`. No roaming/ADV/map/model restriction applies once the story actor exists and the caller owns its current generation.
+`stat_catalog` (also `catalog.stats`) returns field types, write ranges, `adjustable`, English meanings, `relationships` and the `adjustment` policy. `actor.stats` contains the actual native values and `actor.relationship` their descriptive relation. Native effects may produce values outside the API write ranges (for example negative anger); observations and saved bridge progress preserve those values. `set_stats.changes` validates all fields before changing state, writes native state, reads it back and returns the complete actor. `stats_changed` carries `requested`, `before` and `actual`. Both stat operations require the current story actor, ownership and generation, with no roaming/ADV/map/model restriction.
 
 | Field | Type / range | Meaning |
 | --- | --- | --- |
@@ -183,6 +198,42 @@ actual = bridge.request('set_stats', changes={
 }, **p)
 assert actual['stats']['relation'] == 1
 ```
+
+### Incremental attribute changes
+
+`adjust_stats` takes a nonempty `deltas` object and a caller-generated `mutationId`. Only the eight integer score/counter fields in the table support adjustment (`adjustable=true`); relationships and boolean flags remain absolute writes through `set_stats`. Each delta must be an integer from -2147483648 through 2147483647; booleans, strings, fractions and unknown fields are rejected before any write. Use field `key` values returned by `stat_catalog` as `deltas` keys.
+
+The operation reads current native values, adds each delta using 64-bit arithmetic, and clamps the resulting value to that field's write range: 0–100 for scores, 0–2147483647 for counters. Clamping applies even if the observed starting value is outside that range. It reuses `set_stats` validation/normalization, native synchronization, sidecar persistence and whole-batch failure rollback, including talk-event markers. All fields are calculated from one snapshot and committed synchronously on the Unity thread. Persistence of restored sidecars remains best effort on I/O failure, as with `set_stats`.
+
+`set_stats` continues to mean absolute assignment and rejects out-of-range values. Adjusting `anger` retains the existing `isAnger = actual anger > 0` derivation. Adjustments do not score emotions, change relationship rules, or convert saturated favor into intimacy.
+
+```python
+# Generate/store this ID once for this logical change; keep it unchanged on retries.
+change = {'mutationId': 'chat-42-stats',
+          'deltas': {'favor': 4, 'intimacy': -2, 'lewdness': 4}}
+result = bridge.request('adjust_stats', **change, **p)
+print(result['before']['favor'], result['actual']['favor'])
+retry = bridge.request('adjust_stats', **change, **p)
+assert retry['replayed'] is True  # Original outcome; no second increment.
+```
+
+The reply is an adjustment report, rather than the complete actor:
+
+| Field | Meaning |
+| --- | --- |
+| `operation`, `mutationId`, `target`, `generation` | `adjust_stats` and the logical change/actor identity |
+| `requestedDeltas` | Validated signed deltas supplied by the caller |
+| `requested` | Normalized absolute values sent to the shared writer, including derived `isAnger` if applicable |
+| `before`, `actual` | Complete native stat snapshots immediately before and after this commit |
+| `appliedDeltas` | Actual `actual - before` for each requested numeric field, after clamping |
+| `clampedFields` | Field keys whose calculated sum was limited to its legal range |
+| `replayed` | `false` for the first success, `true` when returning its cached result |
+
+For example, starting at `favor=98`, `intimacy=1`, `lewdness=100`, the deltas above produce `100`, `0`, `100`; `appliedDeltas` is `2`, `-1`, `0`, and all three keys appear in `clampedFields`. These are illustrative values, not an emotion-rating rule. A first success emits one `stats_changed` with the report fields except `replayed`; a retry emits no new mutation event. Cached snapshots describe the original operation; use `get` for current state after later changes.
+
+`mutationId` is a case-sensitive, nonblank string of at most 128 characters, distinct from the TCP request `id`. A UUID is suitable. Reusing it with the same normalized field/delta pairs returns the original outcome, regardless of field order, later writes, normal release/reclaim or authenticated `resume`. Reusing it with different deltas returns `adjustment_conflict`. Ownership, current story and generation are still checked before replay. Keep the ID and deltas when retrying a timeout; after reconnecting, resume or claim control first. The client does not generate replacement IDs or retry automatically.
+
+Records are kept in memory for the actor generation, not across story recreation/game restart; those produce a new generation and reject old commands. Up to 4096 execution attempts are retained without eviction. When full, new IDs return `adjustment_limit` before any write; recorded IDs remain queryable. Input-validation failures are not recorded. Once execution starts, a failure is recorded as `adjustment_failed`; that ID will return the same error without executing again. Inspect `get` and resolve the failure before deliberately issuing a new ID. This also prevents automatic reapplication after an uncertain rollback/persistence failure.
 
 ## Player and native game time
 
@@ -217,6 +268,7 @@ Unless stated otherwise, actor commands take `target`; write commands also take 
 | `catalog` | All runtime ID catalogs; no target or ownership needed |
 | `native_actions` | Full native action directory for the actor |
 | `native_plan` | Read-only live native planning and pre-control snapshot; no ownership needed |
+| `sample_native_action` | Independently sample another native girl's current task, anonymously; no target/generation/ownership needed |
 | `map_catalog` | Story and event map references; no target needed |
 | `expression_catalog` | Actor-specific facial pattern directory and controls |
 | `animation_catalog` | Discovered playable Animator states |
@@ -238,6 +290,7 @@ Unless stated otherwise, actor commands take `target`; write commands also take 
 | `turn` | `yaw` from -3600 to 3600 degrees |
 | `stop` | Cancel current task/movement while retaining control |
 | `set_stats` | `changes`: fields/references in the attribute table; returns actual native state in every scene |
+| `adjust_stats` | Stable `mutationId`, integer `deltas`; atomically add/clamp numeric fields and return before/actual values with replay protection |
 | `set_expression` / `clear_expression` | Facial references and controls described above / clear override |
 | `play_animation` | `state` reference, raw state key or signed state hash |
 | `native_talk` | Start the native talk scene; actual native dialogue/menu remains available |
@@ -316,7 +369,9 @@ Speaker roles are `bridge`, `player`, `npc`, `narrator` or `unknown`. IDs are `b
 
 Touch/look events include `interactionId`, `kind`, `nativeMode`, `region`, voice/pose data and lifecycle. `nativeMode=0` means touch; `1` means look. Native voice, animation and counters execute normally. An external application may explicitly call `say` or `dialogue_open` with `afterInteractionId` once the reaction completes; no automatic dialogue request is created.
 
-Supplied replies are displayed through native ADV in pages of at most 50 Unicode text elements (including punctuation/Latin characters); line breaks also end a page. Managed replies accept up to 4000 UTF-16 units. The full original reply appears once in conversation history and `npc_dialogue`, regardless of the page count. `dialogue.pagination` reports `page`, `pageCount`, `maxCharacters=50`, `countUnit='unicode_text_element'` and `nonBmpFallbacks`. Each `dialogue_page` event includes `conversationId`, `turn`, one-based `page`, `pageCount`, original page `text`, actual `displayText` and `maxCharacters`.
+Supplied replies are displayed through native ADV with a page budget equivalent to **60 Chinese characters or 100 ASCII characters**. Each Unicode text element beginning with ASCII costs 3 width units; every other text element costs 5. ASCII letters, digits, spaces and punctuation therefore cost 3; Chinese characters, full-width punctuation and other non-ASCII elements cost 5. Mixed text shares the 300-unit budget (for example, 30 Chinese characters plus 50 ASCII letters). A text element is moved to the next page if adding it would exceed the budget; combining sequences and surrogate pairs are not split by this pagination step. Line breaks also end a page. Managed replies accept up to 4000 UTF-16 units. The full original reply appears once in conversation history and `npc_dialogue`, regardless of the page count.
+
+`dialogue.pagination` reports `page`, `pageCount`, `maxCharacters=100` (the absolute text-element ceiling), `maxCjkCharacters=60`, `maxWidthUnits=300`, `countUnit='weighted_text_element'`, `asciiWidthUnits=3`, `nonAsciiWidthUnits=5` and `nonBmpFallbacks`. Each `dialogue_page` event includes the same limit/counting metadata, plus `conversationId`, `turn`, one-based `page`, `pageCount`, original page `text` and actual `displayText`. These are per-page display limits; they do not reduce the maximum length of the complete reply. Native word wrapping can still overflow a line for unusually long ASCII tokens without spaces.
 
 Unity 5's native typewriter cannot safely measure supplementary Unicode characters (for example Emoji). Only native presentation substitutes each such character with `□`; API history and original page text are preserved. `nonBmpFallbacks` reports the number of substitutions in the reply. Invalid unpaired UTF-16 surrogates are rejected before displaying text.
 
@@ -324,7 +379,7 @@ Other events include controller claims/releases, task queued/started/arrived/com
 
 ## Direct native activity effects
 
-`native_event_catalog` and `catalog.nativeEvents` list supported effects. `trigger_native_event` accepts a returned entry, its key or numeric ID. It requires ownership and the current generation, but no `conversationId`, `requestId`, prior chat or invitation/acceptance roll. The target must be loaded on the current map in roaming or its own native talk scene. Check each entry's `available` and `unavailableReason` immediately before calling.
+`native_event_catalog` and `catalog.nativeEvents` list supported effects. `trigger_native_event` accepts a returned entry, its key or numeric ID. It requires ownership and the current generation, but no `conversationId`, `requestId`, prior chat or invitation/acceptance roll. The target must be loaded on the current map in roaming or its own native talk scene. Check each entry's `available` and `unavailableReason` immediately before calling. Entries include `supported=true`, English `description`, native `commandId`, `result`, executable `request`, `executionKind` (`state_effect` or `native_scene_flow`) and structured `requirements`.
 
 ```python
 event = next(x for x in bridge.request('native_event_catalog') if x['key'] == 'follow_player')
@@ -332,14 +387,33 @@ execution = bridge.request('trigger_native_event', event=event, **p)
 # For activities, observe actor.nativeEvent or native_event_* lifecycle events.
 ```
 
-The six effects are lunch (`4`), club activities (`5`), going home together (`6`), studying (`8`), exercise (`9`) and following (`11`). Exact keys, native result IDs and time/membership requirements are in the [ID reference](docs/REFERENCE.md#native-activity-effects). Relationships, date promises and club membership flags remain writable through `set_stats`.
+The event list includes the following effects. Friend or higher means the native relationship is `friend` (`1`) or `girlfriend` (`2`); it is not an affection-score threshold.
 
-Follow establishes the game's native player-follow relation; `stop` or a new task clears that relation. Normal release hands an active follow to the game; claiming again cancels it with the autonomous activity. Other effects enter the game's activity execution flow; native activity ADV, stat changes, maps and time progression still occur. Internal host preparation omits ordinary greetings and invitation menus. An existing managed reply request is cancelled with reason `native_event`; the native activity does not request a model response. Finish any native choice or touch/look reaction first.
+| Event ID / key | Relationship or membership requirement | Effect |
+| --- | --- | --- |
+| `1 / confess` | Friend or girlfriend | Establish the native girlfriend relationship and markers; update the first-girlfriend ranking and player counter. Already dating is idempotent. |
+| `2 / break_up` | Girlfriend only | End the relationship and date promise, clear this NPC's calendar booking, set native breakup anger (`anger=100`, `isAnger=true`, `talkTime=0`) and run the native breakup/escape flow. |
+| `3 / invite_h` | Friend or girlfriend | Enter the native H flow at an eligible native location. The host checks location eligibility again before applying the effect. |
+| `4 / eat_lunch` | Friend or girlfriend | Enter native lunch; also requires lunch stage `5` and `isLunch=false`. |
+| `5 / club_activity` | Club member only | Enter native club activities during staff stage `8`. |
+| `7 / invite_date` | Friend or girlfriend | Set the date promise and native calendar/save identity. A date booked with another NPC is rejected. |
+| `8 / study_together` | No relationship/membership restriction | Enter native study during free stage `5`, `8` or `9`. |
+| `9 / exercise_together` | No relationship/membership restriction | Enter native exercise during free stage `5`, `8` or `9`. |
+| `10 / invite_club` | Nonmember only | Set native membership and its marker; update the membership ranking and additive club report. |
+| `11 / follow_player` | No relationship/membership restriction | Establish native following. |
 
-Replies and `actor.nativeEvent` contain `executionId`, event reference, `state` (`opening`, `preparing`, `running`, `completed`, `failed`, `cancelled`), `error`, `effectApplied`, numeric `nativeResult`, actual `followingPlayer`, `generation`, `world` and current `stats`. Lifecycle events are `native_event_requested`, `native_event_started`, `native_event_completed`, `native_event_failed` and `native_event_cancelled`. Completion means the dispatched native flow has ended; follow remains active until stopped or handed back to the game. While an activity runs, other action/dialogue writes return `native_event_busy`; `set_stats`, observation and release remain available. Cancellation before effect application prevents dispatch; once applied, native execution is allowed to finish and is not rolled back or automatically replayed after reconnecting.
+The existing `6 / go_home_together` effect remains available at after-school stage `9`. Exact command IDs and native results are in the [ID reference](docs/REFERENCE.md#native-activity-effects). `requirements` exposes `minimumRelation` / `exactRelation` references (or `null`), `clubMember` (`true`, `false`, or unrestricted `null`), permitted `stages` (empty means no extra stage restriction), `sameMap`, `nativeHLocation`, `unusedLunch` and `unoccupiedDateSlot`. These are effect prerequisites, not a second acceptance roll. H location checks may finish in the internally prepared host when called from roaming. Unavailability reasons include `requires_friend_or_girlfriend`, `requires_girlfriend`, `requires_club_membership`, `already_club_member`, `another_date_scheduled`, `requires_native_h_location`, and the existing scene/time/lunch reasons. Pending scene effects recheck prerequisites before dispatch.
+
+Confession, date booking and club admission are immediate `state_effect` operations. They do not open a talk scene, consume an invitation turn, cancel a pending external response or interrupt navigation/dialogue. The reply is completed with actual state. Direct `set_stats` writes remain available, but writing a relation/date/member flag does not execute the associated event's calendar or ranking/report effects.
+
+Follow establishes the game's native player-follow relation; `stop` or a new task clears that relation. Normal release hands an active follow to the game; claiming again cancels it with the autonomous activity. Breakup, H and activity effects enter the game's native scene flow; native activity ADV, stat changes, maps and time progression still occur where applicable. Internal host preparation omits ordinary greetings and invitation menus. Scene-flow effects cancel an existing managed reply request with reason `native_event`; they do not request a model response. Finish any native choice or touch/look reaction first. No additional relationship gate is imposed on study, exercise, follow or the existing go-home effect.
+
+Replies and `actor.nativeEvent` contain `executionId`, event reference, `state` (`opening`, `preparing`, `running`, `completed`, `failed`, `cancelled`), `error`, `effectApplied`, numeric `nativeResult`, actual `followingPlayer`, `generation`, `world` and current `stats`. `before` and `actual` report native effect state before dispatch and at application/completion: `stats`, descriptive `relationship`, `dateScheduled` for this NPC, native `girlfriendCount`, `staffCount`, `playerGirlfriendedCount` and `clubReportStaffAdd`. `actual` is `null` until application or termination; `stats` remains the live readback. Native result `-1 / continue_talk` means a state-only effect has no terminal scene result; it is unrelated to scheduler action `-1`.
+
+Lifecycle events are `native_event_requested`, `native_event_started`, `native_event_completed`, `native_event_failed` and `native_event_cancelled`. Completion means the state effect is applied or the dispatched native flow has ended; follow remains active until stopped or handed back to the game. While a scene flow runs, other action/dialogue writes return `native_event_busy`; `set_stats`, `adjust_stats`, observation and release remain available. Cancellation before effect application prevents dispatch; once applied, native execution is allowed to finish and is not rolled back or automatically replayed after reconnecting.
 
 ## Development helpers and limits
 
 `Development.AllowGameCommands` gates `game.*` helpers: story load, map changes, story advancement/continuation, screenshots, save-export probes, native menu/pointer probes and native body interaction probes. `game.map` accepts a returned map object/key/ID but changes the player map and is a development tool, not the NPC walking interface.
 
-Examples of errors are `unauthorized`, `invalid_request`, `invalid_argument`, `not_plugin_actor`, `not_owner`, `owned`, `generation_required`, `stale_generation`, `not_loaded`, `not_ready`, `unknown_reference`, `reference_mismatch`, `unknown_animation`, `unknown_map`, `action_unavailable`, `native_interaction_busy`, `stale_interaction` and dialogue request/context errors. Check the error code and current state before retrying mutations.
+Examples of errors are `unauthorized`, `invalid_request`, `invalid_argument`, `not_plugin_actor`, `not_owner`, `owned`, `generation_required`, `stale_generation`, `not_loaded`, `not_ready`, `unknown_reference`, `reference_mismatch`, `unknown_animation`, `unknown_map`, `action_unavailable`, `native_interaction_busy`, `stale_interaction`, `adjustment_conflict`, `adjustment_limit`, `adjustment_failed` and dialogue request/context errors. Check the error code and current state before retrying mutations.

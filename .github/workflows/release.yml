@@ -37,6 +37,15 @@ jobs:
           $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { '' }
           $package = ./tools/package-release.ps1 -Tag $tag
           "version=$($package.Version)" >> $env:GITHUB_OUTPUT
+      - name: Prepare versioned release notes
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          $english = Get-Content -LiteralPath "docs/releases/$env:RELEASE_VERSION.md" -Raw -Encoding utf8 -ErrorAction Stop
+          $chinese = Get-Content -LiteralPath "docs/releases/$env:RELEASE_VERSION.zh-CN.md" -Raw -Encoding utf8 -ErrorAction Stop
+          $notes = $english.TrimEnd() + "`n`n<details>`n<summary>简体中文</summary>`n`n" + $chinese.TrimEnd() + "`n`n</details>`n"
+          [IO.File]::WriteAllText('artifacts/release/RELEASE_NOTES.md', $notes, [Text.UTF8Encoding]::new($false))
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-package
@@ -66,57 +75,14 @@ jobs:
           set -euo pipefail
           cd release
           sha256sum --check SHA256SUMS.txt
-          cat > notes.md <<'NOTES'
-          A BepInEx 5 bridge for native story-mode NPC control through a local API.
-
-          This version injects one new bridge character (`bridge:main`). Only this character can currently be controlled. Existing NPC targeting is planned.
-
-          - Player names, native time periods, weekdays and explicit day-ending/day-start events.
-          - Scene-independent native attributes, relationships, club membership and promised dates, with actual readback and independent progress per story save.
-          - Expressions and body animation in native conversations, plus long ADV replies paginated at 50 text elements per page.
-          - Unexpected disconnects hold position for a configurable recovery period (60 seconds by default), with authenticated token-based resume. Normal release/close restores native AI without a grace period.
-          - Actions, navigation, native dialogue events and complete activity reports through the local API. English and Chinese project guides and plugin UI.
-          - Native planning observations and the original AI selection/reservation snapshot returned directly on claim, before native work is cleared. Candidates include desire weights and replayable action references; history is identified separately from future work.
-          - Displayed bridge-related native ADV records include speaker identities and conversation participants. Native conversations offer player text input and an externally controlled waiting notice.
-          - Independent native follow, lunch, club, go-home, study and exercise effects, without invitation/refusal rolls. Native activity ADV and game effects are preserved.
-
-          The native calendar exposes weekdays rather than absolute dates. Native ADV uses a square fallback for supplementary Unicode characters such as Emoji; API history retains the original text. See the API reference for recovery and per-save sidecar backup details.
-
-          Install BepInEx 5, then copy `KK_StoryNPCBridge.dll` into `BepInEx/plugins`, or extract the ZIP into the game directory. Koikatsu Party requires purchasing the After Party DLC and installing the patch from the official website.
-
-          Documentation: [English](https://github.com/qiqi20020612/KK_StoryNPCBridge/blob/master/README.md) | [简体中文](https://github.com/qiqi20020612/KK_StoryNPCBridge/blob/master/README.zh-CN.md). Model access, prompts and decisions belong to external applications. Licensed under MIT.
-
-          <details>
-          <summary>简体中文</summary>
-
-          这是一个通过本地 API 控制故事模式原生 NPC 的 BepInEx 5 桥接插件。
-
-          当前版本会注入一个新的桥接角色（`bridge:main`），且只有这个角色可以被控制。控制已有 NPC 属于后续计划。
-
-          - 提供玩家名字、原生时间段、星期和明确的日终／新一天事件。
-          - 任意场景修改原生属性、关系、社团成员与约会约定，返回实际结果，并按故事存档独立保存进度。
-          - 原生对话中支持表情和身体动作；长 ADV 回复每页最多 50 个文本元素。
-          - 意外断线后原地等待，默认保留 60 秒恢复期，可通过认证与私有 token 安全接续；正常释放／关闭不进入等待期。
-          - 本地接口支持行动、导航、原生对话事件和完整行动报告；项目文档和插件 UI 均提供中英文。
-          - 原生规划观测与接管前 AI 选择／预留快照，在清理原生任务前直接随接管结果返回。候选提供欲望权重和可复用行动引用，历史记录单独标明。
-          - 桥接角色相关的实际原生 ADV 台词记录包含说话者身份与会话参与者；原生对话提供主动文字输入和外部控制的等待提示。
-          - 独立执行原生跟随、午餐、社团、一起回家、学习和运动效果，跳过邀请／拒绝判定，保留原生活动 ADV 及游戏效果。
-
-          原生日历提供星期，没有绝对日期。原生 ADV 中 Emoji 等补充平面 Unicode 字符以方框替代，接口历史保留原文。恢复协议和分存档外置数据备份方式见 API 文档。
-
-          安装 BepInEx 5 后，将 `KK_StoryNPCBridge.dll` 复制到 `BepInEx/plugins`，或将 ZIP 解压到游戏目录。Koikatsu Party 需购买 After Party DLC，并安装官网补丁后才可使用。
-
-          文档：[English](https://github.com/qiqi20020612/KK_StoryNPCBridge/blob/master/README.md) | [简体中文](https://github.com/qiqi20020612/KK_StoryNPCBridge/blob/master/README.zh-CN.md)。模型接入、提示词和行为决策由外部应用负责。项目采用 MIT 许可证。
-
-          </details>
-          NOTES
           if gh release view "$RELEASE_TAG" --json isDraft > existing.json 2>/dev/null; then
             if [ "$(jq -r .isDraft existing.json)" != true ]; then
               echo 'Release is already published; refusing to replace its assets.' >&2
               exit 1
             fi
           else
-            gh release create "$RELEASE_TAG" --verify-tag --draft --title "KK_StoryNPCBridge $RELEASE_VERSION" --notes-file notes.md
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "KK_StoryNPCBridge $RELEASE_VERSION" --notes-file RELEASE_NOTES.md
           fi
+          gh release edit "$RELEASE_TAG" --title "KK_StoryNPCBridge $RELEASE_VERSION" --notes-file RELEASE_NOTES.md
           gh release upload "$RELEASE_TAG" KK_StoryNPCBridge.dll "KK_StoryNPCBridge-$RELEASE_VERSION.zip" SHA256SUMS.txt --clobber
           gh release edit "$RELEASE_TAG" --draft=false --latest

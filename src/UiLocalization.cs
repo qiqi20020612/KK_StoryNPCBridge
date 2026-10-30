@@ -27,7 +27,6 @@ namespace KK_StoryNPCBridge
             { "原生行动 ID", "Native action ID" },
             { "命令已执行。", "Command completed." },
             { "嘴", "Mouth" },
-            { "嘴张开 0–1", "Mouth open 0-1" },
             { "回读", "Refresh" },
             { "好感", "Favor" },
             { "对话状态：", "Dialogue state: " },

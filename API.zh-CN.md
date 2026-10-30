@@ -1,4 +1,4 @@
-# KK_StoryNPCBridge API 1.2.0
+# KK_StoryNPCBridge API 1.3.0
 
 [English](API.md) | 简体中文
 
@@ -11,7 +11,7 @@
 {"id":"2","op":"status"}
 ```
 
-成功回复格式为 `{ "id": "2", "ok": true, "result": ... }`。错误回复格式为 `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`。协议版本为 `2`，插件版本为 `1.2.0`。
+成功回复格式为 `{ "id": "2", "ok": true, "result": ... }`。错误回复格式为 `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`。协议版本为 `2`，插件版本为 `1.3.0`。
 
 认证和状态回复通过 `pluginName="KK_StoryNPCBridge"` 与 `pluginGuid="KK_StoryNPCBridge"` 标识插件。单个 DLL 直接安装为 `BepInEx/plugins/KK_StoryNPCBridge.dll`。
 
@@ -21,7 +21,7 @@ API 中的描述、命令说明及插件生成的汇报文本均为英文。角�
 
 ## 角色控制权
 
-只有 `bridge:main` 可以被写入。通过 `status`、`list` 或 `get` 获取当前 `generation`。写入角色前必须提供 `target`、`generation`，并由当前连接成功执行 `claim`。过期的 generation 以及其他连接在未持有控制权时发起的写入会被拒绝。故事已加载时，`claim`、`release` 和 `set_stats` 不限制场景，也不要求角色模型已加载，可在切图期间使用。导航和调度写入要求漫游；表情和动画也支持桥接角色的原生对话。其他依赖场景的操作可能返回 `busy` 或 `not_ready`。
+只有 `bridge:main` 可以被写入。通过 `status`、`list` 或 `get` 获取当前 `generation`。写入角色前必须提供 `target`、`generation`，并由当前连接成功执行 `claim`。过期的 generation 以及其他连接在未持有控制权时发起的写入会被拒绝。故事已加载时，`claim`、`release`、`set_stats` 和 `adjust_stats` 不限制场景，也不要求角色模型已加载，可在切图期间使用。导航和调度写入要求漫游；表情和动画也支持桥接角色的原生对话。其他依赖场景的操作可能返回 `busy` 或 `not_ready`。
 
 未被接管的角色使用原生 AI。`claim` 会取消自主任务，并冻结此次交接的行动报告。`release`、`release_all` 或正常 `disconnect` 会在场景／对话清理结束后恢复原生调度。意外断线会先原地等待恢复，超时才交回原生调度。`stop` 会保留控制权。不能根据 `nativeAI=true` 判断角色是否自主行动：它只表示存在原生执行器；应通过 `nativeAutonomy` 判断由谁选择行动。
 
@@ -89,11 +89,11 @@ bridge.request('set_expression', changes={
     'eyes': eyes,
     'eyebrow': catalog['expressions']['eyebrow'][0],
     'mouth': catalog['expressions']['mouth'][1],
-    'eyesOpen': 1.0, 'mouthOpen': 0.3, 'blink': False,
+    'eyesOpen': 1.0, 'blink': False,
 }, **p)
 ```
 
-`eyesOpen` 和 `mouthOpen` 为 `[0,1]` 范围内的数值；`blink` 为布尔值。`clear_expression` 会清除覆盖，将表情管理交回原生游戏。实时角色对象包含数值型 `expression`、带说明的 `expressionDetails`，以及表示模式数量的 `expressionLimits`。
+`eyesOpen` 为 `[0,1]` 范围内的数值；`blink` 为布尔值。嘴巴张开度由原生游戏控制：`expression.mouthOpen` 仅供只读上报，不列入可写 `controls`。在 `set_expression.changes` 中传入 `mouthOpen` 会返回 `unsupported_field`；混合提交中包含该字段时，整次修改在应用任何字段前被拒绝。旧配置中保存的张开度会被忽略。嘴型模式（`mouth`）仍可写；应用表情时插件不再写入嘴部张开上限或固定张开比例。`clear_expression` 会清除覆盖，将表情管理交回原生游戏。实时角色对象包含数值型 `expression`、带说明的 `expressionDetails`，以及表示模式数量的 `expressionLimits`。
 
 ### 原生任务与地图
 
@@ -141,6 +141,21 @@ bridge.request(**candidate['request'])  # 显式选定；仍受原生执行条�
 
 generation 改变后需刷新返回的请求。行动 ID／key 沿用现有行动目录；`plansNo` 仍是只读的原生子计划值，不能作为行动编号调用。手动客户端命令 `plan` 在接管前后均可使用。
 
+### 随机参考其他原生 NPC 的当前任务
+
+`sample_native_action` 除 `op`（以及传输请求 ID）外无需参数。需要认证，但无需 target、generation 或控制权。每次调用均从当前故事中已初始化、有原生 AI 结果且行动 ID 非负的女孩中，按不同角色等概率独立抽取一位。始终排除桥接角色，即使她尚未受控；包含其他地图的 NPC，跳过没有当前原生任务的角色。连续调用可能抽到同一位。抽样使用独立随机源，不推进 AI、不改变原生队列／预留，也不消耗游戏的随机状态。仅显式调用时抽样，不随订阅快照自动刷新。
+
+返回 `available`、`unavailableReason` 和 `task`。可用时，`task` 包含 `action`、带说明的 `actionInfo`、目标 `map`／`mapInfo`、`duration=0`，以及以桥接角色为目标的 `request`／`queueRequest`。不返回被抽中角色的 ID、姓名、伙伴、外观、属性或坐标。`plansNo`／`plansName` 为当前原生子计划，`arrival` 和 `elapsedSeconds` 为执行状态。行动和地图编号沿用现有目录；没有原生目标点时为 `map=-1`（`automatic`）。复用时使用桥接角色自己的原生时长，不复制来源角色已执行或剩余的时长；仍需控制权、当前 generation 和合适的原生条件。不会复制交互对象或伙伴，因此来源角色可执行的任务，桥接角色也可能无法执行。
+
+```python
+sample = bridge.request('sample_native_action')
+if sample['available']:
+    bridge.request('queue_action', task=sample['task'], **p)
+    # 或使用 bridge.request(**sample['task']['request']) 立即执行。
+```
+
+不可用时 `task=null`，`unavailableReason` 为 `story_not_ready`、`scene_busy` 或 `no_eligible_native_npc`。原生对话准备就绪后仍可观测其他 NPC；导航和行动写入继续遵守现有场景限制。手动客户端命令为 `sample_action`，接管前也可调用。
+
 ### 动画
 
 `animation_catalog` 列出从原生等待点、对话动作、控制器动画片段及常见状态中发现，并经活动 Animator 确认存在于第 0 层的状态。它不是 Studio 动画数据库，也不保证穷尽所有 Unity 状态。接口仍接受有效的原始状态字符串。每项包含 `context`、英文说明、有符号哈希及可执行的 `play_animation` 请求。与受控角色对话时，视觉命令作用于实际显示的对话模型。
@@ -155,7 +170,7 @@ bridge.request('play_animation', state=idle['id'], **p)
 
 ## 原生属性与关系
 
-`stat_catalog`（也包含于 `catalog.stats`）返回字段类型、写入范围、英文含义及 `relationships`。`actor.stats` 是实际原生值，`actor.relationship` 是附说明的关系引用。原生效果可能产生超出接口写入范围的值（例如负数生气值）；观测与桥接存档进度会保留这些实际值。`set_stats.changes` 在修改前验证全部字段，写入原生状态后重新读取，并返回完整角色。`stats_changed` 包含 `requested`、`before` 和 `actual`。只要故事角色存在、调用方持有当前 generation 的控制权，即可写入，不限制漫游／ADV／地图／模型状态。
+`stat_catalog`（也包含于 `catalog.stats`）返回字段类型、写入范围、`adjustable`、英文含义、`relationships` 及 `adjustment` 策略。`actor.stats` 是实际原生值，`actor.relationship` 是附说明的关系引用。原生效果可能产生超出接口写入范围的值（例如负数生气值）；观测与桥接存档进度会保留这些实际值。`set_stats.changes` 在修改前验证全部字段，写入原生状态后重新读取，并返回完整角色。`stats_changed` 包含 `requested`、`before` 和 `actual`。两种属性操作都要求当前故事角色存在、调用方持有控制权和当前 generation，不限制漫游／ADV／地图／模型状态。
 
 | 字段 | 类型／范围 | 含义 |
 | --- | --- | --- |
@@ -183,6 +198,42 @@ actual = bridge.request('set_stats', changes={
 }, **p)
 assert actual['stats']['relation'] == 1
 ```
+
+### 增量修改属性
+
+`adjust_stats` 接受非空 `deltas` 对象和调用方生成的 `mutationId`。上表中仅八个整数分数／计数字段支持增量（`adjustable=true`）；关系和布尔标志仍通过 `set_stats` 绝对赋值。每个增量须为 -2147483648 至 2147483647 的整数；布尔值、字符串、小数和未知字段会在写入前被拒绝。可直接使用 `stat_catalog` 返回的字段 `key` 作为 `deltas` 的键。
+
+操作先读取当前原生值，以 64 位整数累加，再将结果限制到该字段的写入范围：分数为 0–100，计数为 0–2147483647；即使起始观测值超出该范围，也按此处理最终值。复用 `set_stats` 的验证／规范化、原生同步、外置数据保存和整批失败回滚，包括原生 talk-event 标记。所有字段基于同一份快照计算，在 Unity 主线程同步提交。与 `set_stats` 一样，I/O 故障时回滚后的外置文件保存仍为尽力恢复。
+
+`set_stats` 继续执行绝对赋值，越界值仍被拒绝。增量修改 `anger` 沿用 `isAnger = 实际 anger > 0` 的既有推导；不会新增情绪评分、修改关系规则，也不会在好感度满值后转加亲密度。
+
+```python
+# 每次逻辑修改只生成／保存一次 ID；重试时保持不变。
+change = {'mutationId': 'chat-42-stats',
+          'deltas': {'favor': 4, 'intimacy': -2, 'lewdness': 4}}
+result = bridge.request('adjust_stats', **change, **p)
+print(result['before']['favor'], result['actual']['favor'])
+retry = bridge.request('adjust_stats', **change, **p)
+assert retry['replayed'] is True  # 返回首次结果，不会再次累加。
+```
+
+返回增量报告，而非完整角色：
+
+| 字段 | 含义 |
+| --- | --- |
+| `operation`、`mutationId`、`target`、`generation` | `adjust_stats`、逻辑修改标识及角色身份 |
+| `requestedDeltas` | 已验证的调用方有符号增量 |
+| `requested` | 交给共用写入流程的规范化绝对值，按需包含派生的 `isAnger` |
+| `before`、`actual` | 此次提交紧邻前后的完整原生属性快照 |
+| `appliedDeltas` | 各请求数值字段实际的 `actual - before`，已考虑范围限制 |
+| `clampedFields` | 计算总值受合法范围限制的字段 key |
+| `replayed` | 首次成功为 `false`，返回缓存结果时为 `true` |
+
+例如起始值为 `favor=98`、`intimacy=1`、`lewdness=100`，上述增量得到 `100`、`0`、`100`；`appliedDeltas` 分别为 `2`、`-1`、`0`，三个 key 均出现在 `clampedFields` 中。这只是数值示例，不是情绪评分规则。首次成功发送一条 `stats_changed`，包含除 `replayed` 外的报告字段；重试不再发送修改事件。缓存快照描述首次操作，之后发生其他修改时，应通过 `get` 查询当前状态。
+
+`mutationId` 是区分大小写、非空白且最长 128 字符的字符串，与 TCP 请求 `id` 不同，可使用 UUID。同一 ID 和规范化后相同的字段／增量会返回首次结果，不受字段顺序、后续写入、正常释放后重新接管或认证后 `resume` 影响。同一 ID 改用其他增量返回 `adjustment_conflict`。重放前仍检查控制权、当前故事和 generation；超时重试保留原 ID 与增量，重连后先恢复或接管控制。客户端不会自动生成替代 ID，也不会自动重试。
+
+记录保留在当前角色 generation 的内存中，不跨故事重建／游戏重启；这些操作会产生新 generation 并拒绝旧命令。最多保留 4096 次开始执行的记录，不淘汰旧记录；达到上限时，新 ID 在写入前返回 `adjustment_limit`，旧 ID 仍可查询。输入验证失败不记入记录；开始执行后失败则记录为 `adjustment_failed`，同一 ID 只会返回相同错误，不再执行。应先用 `get` 检查状态并排除故障，再有意使用新 ID，防止回滚／保存结果不明确时自动重复累加。
 
 ## 玩家与原生游戏时间
 
@@ -217,6 +268,7 @@ assert actual['stats']['relation'] == 1
 | `catalog` | 所有运行时编号目录；无需 target 或控制权 |
 | `native_actions` | 角色的完整原生行动目录 |
 | `native_plan` | 只读的当前原生规划与接管前快照，无需控制权 |
+| `sample_native_action` | 独立随机抽取其他原生女孩的当前任务，匿名返回；无需 target／generation／控制权 |
 | `map_catalog` | 故事和事件地图引用；无需 target |
 | `expression_catalog` | 当前角色的表情模式目录及控制参数 |
 | `animation_catalog` | 已发现的可播放 Animator 状态 |
@@ -237,6 +289,7 @@ assert actual['stats']['relation'] == 1
 | `turn` | `yaw`，范围为 -3600 至 3600 度 |
 | `stop` | 取消当前任务／移动，并保留控制权 |
 | `set_stats` | `changes`：上表的字段／引用；在任意场景返回实际原生状态 |
+| `adjust_stats` | 稳定的 `mutationId` 和整数 `deltas`；原子地累加／限制数值字段，返回前后实际值并防止重复应用 |
 | `set_expression`／`clear_expression` | 设置上述表情引用和控制参数／清除覆盖 |
 | `play_animation` | `state` 引用、原始状态 key 或有符号状态哈希 |
 | `native_talk` | 开启原生对话场景；实际的原生对话／菜单仍可使用 |
@@ -316,7 +369,9 @@ bridge.request('set_waiting_indicator', visible=False, **p)
 
 触碰／注视事件包含 `interactionId`、`kind`、`nativeMode`、`region`、语音／姿势数据和生命周期。`nativeMode=0` 表示触碰，`1` 表示注视。原生语音、动画和计数照常执行。反应结束后，外部应用可以显式调用带 `afterInteractionId` 的 `say` 或 `dialogue_open`；插件不会自动创建对话请求。
 
-外部提供的回复通过原生 ADV 分页显示，每页最多 50 个 Unicode 文本元素（标点和拉丁字母也计数），换行也会结束当前页。托管回复最多接受 4000 个 UTF-16 代码单元。无论分成几页，历史和 `npc_dialogue` 中只记录一次完整原文。`dialogue.pagination` 返回 `page`、`pageCount`、`maxCharacters=50`、`countUnit='unicode_text_element'` 和 `nonBmpFallbacks`。每个 `dialogue_page` 事件包含 `conversationId`、`turn`、从 1 开始的 `page`、`pageCount`、原文页 `text`、实际 `displayText` 和 `maxCharacters`。
+外部提供的回复通过原生 ADV 分页显示，每页额度等价于 **60 个汉字或 100 个 ASCII 字符**。以 ASCII 开头的 Unicode 文本元素占 3 个宽度单位，其余文本元素占 5 个；因此英文字母、数字、半角空格和半角标点占 3 个，汉字、全角标点及其他非 ASCII 文本元素占 5 个。中英混排共用每页 300 单位的额度，例如 30 个汉字加 50 个英文字母。若加入下一个文本元素会超出额度，则将整个元素放到下一页，分页步骤不拆开组合字符序列或代理对。换行也会结束当前页。托管回复最多接受 4000 个 UTF-16 代码单元。无论分成几页，历史和 `npc_dialogue` 中只记录一次完整原文。
+
+`dialogue.pagination` 返回 `page`、`pageCount`、`maxCharacters=100`（文本元素数量的绝对上限）、`maxCjkCharacters=60`、`maxWidthUnits=300`、`countUnit='weighted_text_element'`、`asciiWidthUnits=3`、`nonAsciiWidthUnits=5` 和 `nonBmpFallbacks`。每个 `dialogue_page` 事件包含相同的限额／计数元数据，以及 `conversationId`、`turn`、从 1 开始的 `page`、`pageCount`、原文页 `text` 和实际 `displayText`。这些是单页显示限额，不会缩减整条回复允许的最大长度。原生自动换行对异常长、没有空格的 ASCII 连续字符串仍可能横向溢出。
 
 Unity 5 的原生打字机无法安全测量补充平面 Unicode 字符（如 Emoji），仅在原生显示时将每个此类字符替换为 `□`，接口历史和分页原文仍完整保留。`nonBmpFallbacks` 返回整条回复的替换次数。无效的未配对 UTF-16 代理项会在显示前被拒绝。
 
@@ -324,7 +379,7 @@ Unity 5 的原生打字机无法安全测量补充平面 Unicode 字符（如 Em
 
 ## 直接执行原生活动效果
 
-`native_event_catalog` 和 `catalog.nativeEvents` 返回支持的效果。`trigger_native_event` 接受返回的目录对象、key 或数值 ID，要求控制权与当前 generation，无需 `conversationId`、`requestId`、预先聊天或邀请／接受判定。目标须在当前地图加载，处于漫游或她自己的原生聊天场景。调用前应刷新 `available`、`unavailableReason`。
+`native_event_catalog` 和 `catalog.nativeEvents` 返回支持的效果。`trigger_native_event` 接受返回的目录对象、key 或数值 ID，要求控制权与当前 generation，无需 `conversationId`、`requestId`、预先聊天或邀请／接受判定。目标须在当前地图加载，处于漫游或她自己的原生聊天场景。调用前应刷新 `available`、`unavailableReason`。目录项包含 `supported=true`、英文 `description`、原生 `commandId`、`result`、可执行 `request`、`executionKind`（`state_effect`／`native_scene_flow`）和结构化 `requirements`。
 
 ```python
 event = next(x for x in bridge.request('native_event_catalog') if x['key'] == 'follow_player')
@@ -332,15 +387,34 @@ execution = bridge.request('trigger_native_event', event=event, **p)
 # 活动通过 actor.nativeEvent 或 native_event_* 事件跟踪。
 ```
 
-六种效果为午餐（`4`）、社团（`5`）、一起回家（`6`）、学习（`8`）、运动（`9`）、跟随（`11`）。准确 key、原生结果编号及时间／成员条件见[编号参考](docs/REFERENCE.zh-CN.md#原生活动效果)。关系、约会约定、社团成员状态仍通过 `set_stats` 修改。
+事件列表包含以下效果。“朋友以上”指原生关系为 `friend`（`1`）或 `girlfriend`（`2`），不是好感度数值门槛。
 
-跟随直接建立游戏原生的玩家跟随关系；`stop` 或新任务会清除此关系。正常释放控制会将正在进行的跟随交给游戏管理，重新接管会连同自主行为一起取消。其他效果进入游戏原生活动执行流程，仍会产生原生活动 ADV、属性变化、地图与时间推进。内部准备宿主时跳过普通问候和邀请菜单。已有托管请求以 `native_event` 原因取消，活动不会请求模型回复。请先完成原生选项或触碰／注视反应。
+| 事件 ID／key | 关系或部员限制 | 效果 |
+| --- | --- | --- |
+| `1 / confess` | 朋友或恋人 | 建立原生恋人关系与标记，更新首次恋人排行及玩家计数；已是恋人时幂等，不重复累加。 |
+| `2 / break_up` | 仅恋人 | 解除恋人和约会约定，清除此角色的原生日程登记，应用原生分手状态（`anger=100`、`isAnger=true`、`talkTime=0`），进入原生分手／离开流程。 |
+| `3 / invite_h` | 朋友或恋人 | 在满足原生地点条件时进入 H 流程；执行前在原生宿主中再次检查地点。 |
+| `4 / eat_lunch` | 朋友或恋人 | 进入原生午餐；另需午餐阶段 `5`、`isLunch=false`。 |
+| `5 / club_activity` | 仅部员 | 在社团阶段 `8` 进入原生社团活动。 |
+| `7 / invite_date` | 朋友或恋人 | 设置约会约定，并登记原生日程／存档中的角色身份；已有其他角色的约会时拒绝覆盖。 |
+| `8 / study_together` | 无关系／部员限制 | 在自由阶段 `5`、`8`、`9` 进入原生学习。 |
+| `9 / exercise_together` | 无关系／部员限制 | 在自由阶段 `5`、`8`、`9` 进入原生运动。 |
+| `10 / invite_club` | 仅非部员 | 设置原生部员和事件标记，更新成员排行和累加式社团报告。 |
+| `11 / follow_player` | 无关系／部员限制 | 建立原生跟随关系。 |
 
-返回值及 `actor.nativeEvent` 包含 `executionId`、事件引用、`state`（`opening`、`preparing`、`running`、`completed`、`failed`、`cancelled`）、`error`、`effectApplied`、数值 `nativeResult`、实际 `followingPlayer`、`generation`、`world`、当前 `stats`。生命周期事件为 `native_event_requested`、`native_event_started`、`native_event_completed`、`native_event_failed`、`native_event_cancelled`。完成表示原生执行流程结束；跟随仍持续到停止或交还游戏。活动期间其他动作／对话写入返回 `native_event_busy`；`set_stats`、观测、释放控制仍可使用。效果应用前可取消派发；应用后允许原生流程完成，不回滚，也不在重连后自动重放。
+原有 `6 / go_home_together` 继续在放学阶段 `9` 可用。准确命令 ID、原生结果编号见[编号参考](docs/REFERENCE.zh-CN.md#原生活动效果)。`requirements` 提供 `minimumRelation`／`exactRelation` 引用（无要求时为 `null`）、`clubMember`（`true`／`false`／不限的 `null`）、允许的 `stages`（空数组表示无额外阶段限制）、`sameMap`、`nativeHLocation`、`unusedLunch`、`unoccupiedDateSlot`。这些是执行条件，不是二次接受判定。漫游中调用 H 时，地点检查可能在内部准备的原生宿主中完成。不可用原因包括 `requires_friend_or_girlfriend`、`requires_girlfriend`、`requires_club_membership`、`already_club_member`、`another_date_scheduled`、`requires_native_h_location`，以及现有的场景／时间／午餐原因。尚未应用的场景效果在实际派发前会再次检查条件。
+
+告白、约会登记和入部属于立即执行的 `state_effect`：不打开聊天场景，不消耗邀请轮次，不取消待处理的外部回复，也不中断导航／对话；直接返回完成状态及实际结果。仍可使用 `set_stats` 写入状态，但单独修改关系／约会／部员标志，不会执行对应事件的日程、排行和社团报告效果。
+
+跟随直接建立游戏原生的玩家跟随关系；`stop` 或新任务会清除此关系。正常释放控制会将正在进行的跟随交给游戏管理，重新接管会连同自主行为一起取消。分手、H 和活动效果进入原生场景流程，按相应事件保留原生活动 ADV、属性变化、地图与时间推进。内部准备宿主时跳过普通问候和邀请菜单。场景流程以 `native_event` 原因取消已有托管回复请求，不会请求模型回复。请先完成原生选项或触碰／注视反应。学习、运动、跟随和原有一起回家功能不额外增加关系门槛。
+
+返回值及 `actor.nativeEvent` 包含 `executionId`、事件引用、`state`（`opening`、`preparing`、`running`、`completed`、`failed`、`cancelled`）、`error`、`effectApplied`、数值 `nativeResult`、实际 `followingPlayer`、`generation`、`world`、当前 `stats`。`before` 和 `actual` 分别上报派发前和应用／完成时的原生效果状态：`stats`、带说明的 `relationship`、此角色的 `dateScheduled`，以及原生 `girlfriendCount`、`staffCount`、`playerGirlfriendedCount`、`clubReportStaffAdd`。应用或终止前 `actual=null`；`stats` 始终为实时读回值。原生结果 `-1 / continue_talk` 表示状态效果没有终结场景的结果，与调度行动的 `-1` 无关。
+
+生命周期事件为 `native_event_requested`、`native_event_started`、`native_event_completed`、`native_event_failed`、`native_event_cancelled`。完成表示状态效果已应用，或派发的原生流程已结束；跟随仍持续到停止或交还游戏。场景流程期间其他动作／对话写入返回 `native_event_busy`；`set_stats`、`adjust_stats`、观测、释放控制仍可使用。效果应用前可取消派发；应用后允许原生流程完成，不回滚，也不在重连后自动重放。
 
 ## 开发辅助功能与限制
 
 
 `Development.AllowGameCommands` 控制 `game.*` 辅助命令是否可用，包括故事加载、地图切换、故事推进／继续、截图、存档导出探针、原生菜单／指针探针及原生部位交互探针。`game.map` 接受返回的地图对象／key／ID，但它改变的是玩家地图，属于开发工具，不是 NPC 步行接口。
 
-错误示例包括 `unauthorized`、`invalid_request`、`invalid_argument`、`not_plugin_actor`、`not_owner`、`owned`、`generation_required`、`stale_generation`、`not_loaded`、`not_ready`、`unknown_reference`、`reference_mismatch`、`unknown_animation`、`unknown_map`、`action_unavailable`、`native_interaction_busy`、`stale_interaction`，以及对话请求／上下文错误。重试写入前，请先检查错误码和当前状态。
+错误示例包括 `unauthorized`、`invalid_request`、`invalid_argument`、`not_plugin_actor`、`not_owner`、`owned`、`generation_required`、`stale_generation`、`not_loaded`、`not_ready`、`unknown_reference`、`reference_mismatch`、`unknown_animation`、`unknown_map`、`action_unavailable`、`native_interaction_busy`、`stale_interaction`、`adjustment_conflict`、`adjustment_limit`、`adjustment_failed`，以及对话请求／上下文错误。重试写入前，请先检查错误码和当前状态。

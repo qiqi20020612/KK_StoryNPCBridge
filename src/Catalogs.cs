@@ -283,7 +283,6 @@ namespace KK_StoryNPCBridge
             }
             result["controls"] = new object[] {
                 Json.Map("key", "eyesOpen", "name", "Eye opening limit", "type", "number", "min", 0, "max", 1, "description", "Maximum eyelid opening; 0 closed, 1 fully open."),
-                Json.Map("key", "mouthOpen", "name", "Mouth opening", "type", "number", "min", 0, "max", 1, "description", "Mouth opening; 0 closed, 1 fully open."),
                 Json.Map("key", "blink", "name", "Automatic blinking", "type", "boolean", "description", "Enable or disable the native blink controller.") };
             return result;
         }

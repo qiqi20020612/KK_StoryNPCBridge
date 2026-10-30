@@ -24,16 +24,18 @@ These targeting modes are planned features, not capabilities of the current vers
 
 - Read player names, native game periods, weekdays and explicit day-ending/day-start events.
 - Read and modify native scores, relationships, club membership and promised-date flags in any scene, with actual native results returned.
+- Adjust numeric attributes by signed deltas, clamp to native ranges and return before/actual values; stable mutation IDs prevent duplicate application on retries.
 - Keep bridge progress independently for each story save; first creation starts with zero scores/counters and false exposed state flags.
 - Control expressions and body animation during roaming and native conversations.
 - Schedule native actions immediately or queue the next tasks.
 - Observe native AI selections, reserved destinations and desire-weighted candidates; taking control returns the original planning snapshot before clearing native work.
+- Independently sample another native girl's current task as an anonymous behavior reference, with reusable action requests.
 - Walk to the player using native navigation, including cross-map routes.
-- Use native ADV dialogue with user input, external-response waiting, NPC-initiated invitations and long replies paginated at 50 text elements per page.
+- Use native ADV dialogue with user input, external-response waiting, NPC-initiated invitations and long replies paginated at the equivalent of 60 Chinese characters or 100 ASCII characters per page.
 - Report native dialogue choices and distinguish touch from look while preserving original body reactions.
 - Record displayed native ADV lines involving the bridge NPC, with speaker identities and conversation participants; unrelated conversations and voice-only reactions are excluded.
 - Let the player open text input from a native conversation; external connectors explicitly show/hide a waiting indicator without injecting dialogue.
-- Execute native follow, lunch, club, go-home, study and exercise effects independently through the API, without an invitation/refusal roll.
+- Execute native confession, breakup, H, lunch, date, club activities/admission, study, exercise, follow and go-home effects independently through the API, with explicit relationship/membership requirements and no invitation/refusal roll.
 - Return activity reports directly when taking control; movement history records map changes only.
 - Discover English ID descriptions and reuse returned catalog entries, keys, numeric IDs or request templates in calls.
 - Hold position after an unexpected disconnect and safely resume within a configurable grace period (60 seconds by default).
@@ -96,6 +98,7 @@ time
 use 1
 stats
 stat relation=friend isStaff=true isDate=true favor=30
+adjust demo-stats-1 favor=4 intimacy=-2 lewdness=4
 summon
 get
 report
@@ -103,7 +106,7 @@ release
 quit
 ```
 
-`use 1` claims the injected bridge character and prints the complete handover report. `summon` makes her walk near the player; it does not teleport. Keep the controller connected while tasks run. Normal Python client shutdown releases control immediately. Unexpected transport or heartbeat loss starts the reconnection grace period; use the private credentials returned by `claim` to resume (see the API reference).
+`use 1` claims the injected bridge character and prints the complete handover report. `stat` sets absolute values; `adjust` adds deltas. Use a new mutation ID for a new change and reuse the ID/deltas after a timeout (see [incremental attribute changes](API.md#incremental-attribute-changes)). `summon` makes her walk near the player; it does not teleport. Keep the controller connected while tasks run. Normal Python client shutdown releases control immediately. Unexpected transport or heartbeat loss starts the reconnection grace period; use the private credentials returned by `claim` to resume (see the API reference).
 
 Applications can also set `KOIKATU_GAME_ROOT` or pass `game_root` to `BridgeClient`:
 
@@ -142,7 +145,7 @@ The output is `artifacts/build/KK_StoryNPCBridge.dll`, targeting .NET Framework 
 To create the release DLL, installation ZIP and SHA-256 checksums:
 
 ```powershell
-pwsh -File tools/package-release.ps1 -Tag v1.2.0
+pwsh -File tools/package-release.ps1 -Tag v1.3.0
 ```
 
 GitHub Actions builds pushes and pull requests. Pushing a `v<version>` tag builds and publishes a release after checking that the tag matches the DLL version.

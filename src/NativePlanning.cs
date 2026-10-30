@@ -9,6 +9,31 @@ namespace KK_StoryNPCBridge
 {
     public sealed partial class Plugin
     {
+        readonly Random nativeActionSampler = new Random();
+        object SampleNativeAction()
+        {
+            string reason = action == null || !Manager.Game.IsInstance() ? "story_not_ready" : SceneBusy ? "scene_busy" : null;
+            var pool = new List<ActionGame.Chara.AI>();
+            var seen = new HashSet<SaveData.Heroine>();
+            if (reason == null && action.npcList != null)
+                foreach (var npc in action.npcList)
+                {
+                    if (npc == null || !npc.initialized || npc.heroine == null || IsOwned(npc.heroine) || npc.heroine.parameter.sex != 1 ||
+                        !Manager.Game.Instance.saveData.heroineList.Contains(npc.heroine) || npc.AI == null || npc.AI.result == null || npc.AI.result.actionNo < 0 || !seen.Add(npc.heroine)) continue;
+                    pool.Add(npc.AI);
+                }
+            if (reason == null && pool.Count == 0) reason = "no_eligible_native_npc";
+            if (reason != null) return Json.Map("available", false, "unavailableReason", reason, "task", null);
+            var ai = pool[nativeActionSampler.Next(pool.Count)];
+            var current = ai.result;
+            int mapId = current.point == null ? -1 : current.point.MapNo;
+            var task = Json.Map("action", current.actionNo, "actionInfo", ActionReference(current.actionNo), "map", mapId, "mapInfo", MapReference(mapId), "duration", 0);
+            task["request"] = Json.Map("op", "set_action", "target", ActorId, "generation", ownedGeneration, "action", ActionReference(current.actionNo), "map", MapReference(mapId), "duration", 0);
+            task["queueRequest"] = Json.Map("op", "queue_action", "target", ActorId, "generation", ownedGeneration, "action", ActionReference(current.actionNo), "map", MapReference(mapId), "duration", 0);
+            return Json.Map("available", true, "unavailableReason", null, "task", task,
+                "plansNo", current.plansNo, "plansName", current.plansName, "arrival", ai.isArrival, "elapsedSeconds", ai.actionTimer,
+                "description", "One independent sample of another native girl's current task. No source character identity is returned. Replay requires bridge ownership and native conditions; duration 0 uses the bridge's native task duration.");
+        }
         object NativeDesireInfo()
         {
             if (action == null || action.actCtrl == null || ownedHeroine == null) return null;

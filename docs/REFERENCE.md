@@ -10,6 +10,8 @@ Reference mappings for the original Japanese release of Koikatu and the default 
 
 Use `set_stats.changes.relation`. A relationship reference updates meeting, friendship and girlfriend flags together. The native getter derives the result from those flags. Attribute types, ranges and all writable flags are documented in [Native attributes and relationships](../API.md#native-attributes-and-relationships).
 
+`adjust_stats.deltas` accepts numeric field keys with `stat_catalog.fields[].adjustable=true`, using the returned `min`/`max` for clamping. Relationship references and boolean flags remain absolute-only; retry identity and result fields are described in [Incremental attribute changes](../API.md#incremental-attribute-changes).
+
 | ID | Key | English meaning |
 | --- | --- | --- |
 | -1 | `stranger` | Not met |
@@ -68,16 +70,23 @@ Use `trigger_native_event.event` with an entry from `native_event_catalog` / `ca
 
 | Event ID | Key | Effect | Command ID | Native result | Additional requirements |
 | --- | --- | --- | --- | --- | --- |
-| 4 | `eat_lunch` | Eat lunch together | 14 | `3 / lunch` | Lunch stage 5; `isLunch=false` |
-| 5 | `club_activity` | Do club activities together | 15 | `4 / club` | Staff stage 8; `isStaff=true` |
-| 6 | `go_home_together` | Go home together | 16 | `5 / gohome` | After-school stage 9 |
-| 8 | `study_together` | Study together | 18 | `6 / study` | Free stage 5, 8 or 9 |
-| 9 | `exercise_together` | Exercise together | 19 | `7 / exercise` | Free stage 5, 8 or 9 |
+| 1 | `confess` | Confess affection | 11 | `-1 / continue_talk` | Friend or girlfriend |
+| 2 | `break_up` | Break up | 12 | `8 / divorce` | Girlfriend |
+| 3 | `invite_h` | Invite to H | 13 | `2 / h` | Friend or girlfriend; eligible native H location |
+| 4 | `eat_lunch` | Eat lunch together | 14 | `3 / lunch` | Friend or girlfriend; stage 5; `isLunch=false` |
+| 5 | `club_activity` | Do club activities together | 15 | `4 / club` | Club member; stage 8 |
+| 6 | `go_home_together` | Go home together | 16 | `5 / gohome` | Stage 9 |
+| 7 | `invite_date` | Arrange a date | 17 | `-1 / continue_talk` | Friend or girlfriend; no other NPC's date booking |
+| 8 | `study_together` | Study together | 18 | `6 / study` | Stage 5, 8, 9 |
+| 9 | `exercise_together` | Exercise together | 19 | `7 / exercise` | Stage 5, 8, 9 |
+| 10 | `invite_club` | Invite to the club | 20 | `-1 / continue_talk` | Nonmember |
 | 11 | `follow_player` | Follow the player | 21 | `1 / chase` | Ready roaming or the NPC's native conversation |
 
-Activity scenes retain their native ADV and time/state effects. Follow uses the native player-follow binding. Relationship/date/membership state changes use `set_stats`; button interception remains observational until the external controller explicitly executes an effect.
+Activity scenes retain their native ADV and time/state effects. Follow uses the native player-follow binding. Confession/date/admission apply state effects without opening or interrupting dialogue; native result `-1 / continue_talk` means no terminal scene result, not scheduler idle. The date effect updates native calendar/save identity; admission and confession update the applicable ranking/player/report counters. `set_stats` writes flags without executing these related event effects. `requirements` describes relationship/membership/stage/context constraints; button interception remains observational until the external controller explicitly executes an effect.
 
 ## Native scheduler actions
+
+`sample_native_action` independently draws another native girl's current task without source character information. Returned `task.actionInfo` and `mapInfo` use these same action and map domains; `task` can be supplied to `set_action` / `queue_action`. Sampling does not guarantee replay availability. See [Sample another native NPC's current task](../API.md#sample-another-native-npcs-current-task).
 
 `native_plan` observes selected actions and current desire-weighted candidates using these same references; `claim` returns the pre-control snapshot in `handoverReport.nativePlan`. The native AI chooses one action at a time. Its recent-action and priority memory are not a future task queue; candidate order is descriptive and does not guarantee eligibility or execution. See [Native AI planning observations](../API.md#native-ai-planning-observations).
 
@@ -167,7 +176,7 @@ Use a map reference in task `map`. `automatic` (-1) asks the scheduler to choose
 
 ## Expression patterns
 
-Indices are local to the actor model and facial field. A mouth reference cannot be applied to eyes. Use `set_expression.changes.eyes`, `.eyebrow` or `.mouth`. The first mesh's exact closed/open morph targets are shown; the live entry includes all mesh targets. Visual strength also depends on `eyesOpen`, `mouthOpen` and blinking. Unknown custom morph combinations are labeled explicitly rather than assigned a guessed default-model expression.
+Indices are local to the actor model and facial field. A mouth reference cannot be applied to eyes. Use `set_expression.changes.eyes`, `.eyebrow` or `.mouth`. The first mesh's exact closed/open morph targets are shown; the live entry includes all mesh targets. Visual strength also depends on `eyesOpen`, native mouth opening and blinking. Mouth opening is read-only (`expression.mouthOpen`); it cannot be set through the API. Unknown custom morph combinations are labeled explicitly rather than assigned a guessed default-model expression.
 
 
 ### eyes
@@ -278,7 +287,6 @@ Indices are local to the actor model and facial field. A mouth reference cannot 
 | Key | Type | Meaning |
 | --- | --- | --- |
 | eyesOpen | number 0-1 | Eyelid opening limit; 0 closed, 1 fully open |
-| mouthOpen | number 0-1 | Mouth opening; 0 closed, 1 fully open |
 | blink | boolean | Enable automatic native blinking |
 
 

@@ -16,7 +16,7 @@ namespace KK_StoryNPCBridge
         Vector2 panelScroll;
         string uiNotice = "未接管时由原生 AI 管理；开始控制时返回期间行为记录。";
         string favorText = "0", intimacyText = "0", angerText = "0";
-        string eyesText = "0", eyebrowText = "0", mouthText = "0", mouthOpenText = "0";
+        string eyesText = "0", eyebrowText = "0", mouthText = "0";
         string xText = "0", yText = "0", zText = "0", yawText = "0", animationText = "Idle";
         string taskActionText = "10", taskMapText = "-1", taskDurationText = "10", desireText = "50";
         bool showActionCatalog;
@@ -139,8 +139,8 @@ namespace KK_StoryNPCBridge
                 favorText = Field(T("好感"), favorText); intimacyText = Field(T("亲密"), intimacyText); angerText = Field(T("怒气"), angerText);
                 if (GUILayout.Button(T("保存数值"))) UiParsed(delegate { return Json.Map("op", "set_stats", "changes", Json.Map("favor", ParseNumber(favorText), "intimacy", ParseNumber(intimacyText), "anger", ParseNumber(angerText))); });
                 GUILayout.Label(T("表情（保持至下一次插件命令）"));
-                eyesText = Field(T("眼"), eyesText); eyebrowText = Field(T("眉"), eyebrowText); mouthText = Field(T("嘴"), mouthText); mouthOpenText = Field(T("嘴张开 0–1"), mouthOpenText);
-                if (GUILayout.Button(T("应用表情"))) UiParsed(delegate { return Json.Map("op", "set_expression", "changes", Json.Map("eyes", ParseNumber(eyesText), "eyebrow", ParseNumber(eyebrowText), "mouth", ParseNumber(mouthText), "mouthOpen", ParseNumber(mouthOpenText))); });
+                eyesText = Field(T("眼"), eyesText); eyebrowText = Field(T("眉"), eyebrowText); mouthText = Field(T("嘴"), mouthText);
+                if (GUILayout.Button(T("应用表情"))) UiParsed(delegate { return Json.Map("op", "set_expression", "changes", Json.Map("eyes", ParseNumber(eyesText), "eyebrow", ParseNumber(eyebrowText), "mouth", ParseNumber(mouthText))); });
                 if (GUILayout.Button(T("恢复默认表情"))) Ui("clear_expression", null);
                 GUILayout.Label(T("世界坐标（当前地图导航区域）"));
                 xText = Field("X", xText); yText = Field("Y", yText); zText = Field("Z", zText); yawText = Field(T("朝向"), yawText);
@@ -182,7 +182,7 @@ namespace KK_StoryNPCBridge
             Vector3 p = ownedRoot.transform.position;
             xText = p.x.ToString("F3", CultureInfo.InvariantCulture); yText = p.y.ToString("F3", CultureInfo.InvariantCulture); zText = p.z.ToString("F3", CultureInfo.InvariantCulture);
             yawText = ownedRoot.transform.eulerAngles.y.ToString("F1", CultureInfo.InvariantCulture);
-            eyesText = ownedCha.GetEyesPtn().ToString(); eyebrowText = ownedCha.GetEyebrowPtn().ToString(); mouthText = ownedCha.GetMouthPtn().ToString(); mouthOpenText = ownedCha.GetMouthOpenMax().ToString("F2", CultureInfo.InvariantCulture); animationText = ownedAnimation;
+            eyesText = ownedCha.GetEyesPtn().ToString(); eyebrowText = ownedCha.GetEyebrowPtn().ToString(); mouthText = ownedCha.GetMouthPtn().ToString(); animationText = ownedAnimation;
         }
         void UiNativeTask(string op) { UiParsed(delegate { return Json.Map("op", op, "action", ParseNumber(taskActionText), "map", ParseNumber(taskMapText), "duration", ParseNumber(taskDurationText)); }); }
         void UiPosition(string op) { UiParsed(delegate { return Json.Map("op", op, "position", new double[] { ParseNumber(xText), ParseNumber(yText), ParseNumber(zText) }); }); }

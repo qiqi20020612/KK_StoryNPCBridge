@@ -25,7 +25,7 @@ namespace KK_StoryNPCBridge
         Dictionary<string, object> ownedStats, ownedFace;
 
         static Dictionary<string, object> NeutralFace()
-        { return Json.Map("eyes", 0, "eyebrow", 0, "mouth", 0, "eyesOpen", 1f, "mouthOpen", 0f, "blink", false); }
+        { return Json.Map("eyes", 0, "eyebrow", 0, "mouth", 0, "eyesOpen", 1f, "blink", false); }
         void InitializeOwnedProfile()
         {
             ownedName = Config.Bind("OwnedNpc", "DisplayName", "Bridge NPC", "Name of the one plugin-owned female actor; existing profile names are preserved").Value;

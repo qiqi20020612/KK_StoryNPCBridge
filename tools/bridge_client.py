@@ -141,7 +141,8 @@ def show(value):
 
 
 def shell(client):
-    print("Dedicated NPC: list | use 1 | get | report | player | time | stats | stat favor=20 relation=friend isStaff=true | face mouth=1 mouthOpen=0.3")
+    print("Dedicated NPC: list | use 1 | get | report | player | time | stats | stat favor=20 relation=friend isStaff=true | face mouth=1")
+    print("adjust MUTATION_ID favor=4 intimacy=-2 lewdness=4 (reuse the ID and deltas when retrying)")
     print("move x y z | warp x y z | turn degrees | stop | anim state | say text | dialogue text | reply text")
     print("release | events | quit. Closing the client releases temporary NPC control.")
     print("actions | action ID [map] [seconds] | queue ID [map] [seconds] | desire ID 0..100")
@@ -180,6 +181,8 @@ def shell(client):
                 show(client.request("status")["actors"][0]["activityReport"])
             elif command == "plan":
                 show(client.request("native_plan", target="bridge:main"))
+            elif command == "sample_action":
+                show(client.request("sample_native_action"))
             elif command in {"player", "time"}:
                 show(client.request("status")["player" if command == "player" else "gameTime"])
             elif command == "stats":
@@ -201,6 +204,16 @@ def shell(client):
                 if args[0] not in {"on", "off"}:
                     raise ValueError("Use waiting on or waiting off")
                 show(client.request("set_waiting_indicator", target=target, generation=generation, visible=args[0] == "on"))
+            elif command == "adjust":
+                if len(args) < 2:
+                    raise ValueError("Use adjust MUTATION_ID favor=4 intimacy=-2 lewdness=4; reuse the ID and deltas when retrying")
+                deltas = {}
+                for arg in args[1:]:
+                    key, value = arg.split("=", 1)
+                    if key in deltas:
+                        raise ValueError("Duplicate delta field: " + key)
+                    deltas[key] = json.loads(value)
+                show(client.request("adjust_stats", target=target, generation=generation, mutationId=args[0], deltas=deltas))
             elif command in {"stat", "face"}:
                 changes = {}
                 for arg in args:

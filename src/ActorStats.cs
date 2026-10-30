@@ -10,6 +10,9 @@ namespace KK_StoryNPCBridge
         static readonly string[] CounterFields = { "hCount", "nickNameTalkCount", "myRoomCount", "eventAfterDay" };
         static readonly string[] FlagFields = { "isAnger", "isGirlfriend", "isStaff", "isDate", "isTaked", "confessed", "isFirstGirlfriend", "isLunch", "isTalkPoint", "isKiss", "isVirgin", "isAnalVirgin" };
         static bool Contains(string[] fields, string key) { return Array.IndexOf(fields, key) >= 0; }
+        static bool AdjustableStat(string key) { return Contains(ScoreFields, key) || Contains(CounterFields, key); }
+        static int StatMinimum(string key) { return key == "relation" ? -1 : 0; }
+        static int StatMaximum(string key) { return key == "relation" ? 2 : Contains(ScoreFields, key) ? 100 : int.MaxValue; }
         static FieldInfo StatField(string name) { return typeof(SaveData.Heroine).GetField(name, BindingFlags.Instance | BindingFlags.Public); }
         static Dictionary<string, object> ZeroStats()
         {
@@ -27,9 +30,9 @@ namespace KK_StoryNPCBridge
             {
                 string key = pair.Key;
                 if (Contains(FlagFields, key) || key == "hasMet" || key == "isFriend") Boolean(pair.Value, key);
-                else if (Contains(ScoreFields, key) || Contains(CounterFields, key) || key == "relation")
+                else if (AdjustableStat(key) || key == "relation")
                 {
-                    double value = Number(pair.Value, key == "relation" ? -1 : 0, key == "relation" ? 2 : Contains(ScoreFields, key) ? 100 : int.MaxValue, key);
+                    double value = Number(pair.Value, StatMinimum(key), StatMaximum(key), key);
                     if (value != Math.Floor(value)) throw new BridgeException("invalid_argument", key + " must be an integer");
                 }
                 else throw new BridgeException("unsupported_field", key);
@@ -90,12 +93,13 @@ namespace KK_StoryNPCBridge
             }
         }
         void ApplyOwnedStats() { if (ownedHeroine != null) WriteNativeStats(ownedStats); }
-        object SetOwnedStats(Dictionary<string, object> input)
+        void RequireStatsActor()
         {
             if (ownedHeroine == null || !Manager.Game.IsInstance() || !ReferenceEquals(ownedSave, Manager.Game.Instance.saveData))
                 throw new BridgeException("not_ready", "Load a story before changing native attributes");
-            var changes = NormalizeStats(input); SyncOwnedStats();
-            var before = new Dictionary<string, object>(ownedStats);
+        }
+        Dictionary<string, object> CommitOwnedStats(Dictionary<string, object> changes, Dictionary<string, object> before)
+        {
             var eventsBefore = new HashSet<int>(ownedHeroine.talkEvent);
             try { WriteNativeStats(changes); SyncOwnedStats(); SaveNativeProfile(); SaveOwnedProfile(); }
             catch
@@ -105,20 +109,28 @@ namespace KK_StoryNPCBridge
                 try { SaveNativeProfile(); SaveOwnedProfile(); } catch (Exception e) { Logger.LogWarning("Attribute rollback persistence: " + e.Message); }
                 throw;
             }
-            AddEvent("stats_changed", Json.Map("requested", changes, "before", before, "actual", new Dictionary<string, object>(ownedStats)));
+            return new Dictionary<string, object>(ownedStats);
+        }
+        object SetOwnedStats(Dictionary<string, object> input)
+        {
+            RequireStatsActor();
+            var changes = NormalizeStats(input); SyncOwnedStats();
+            var before = new Dictionary<string, object>(ownedStats);
+            var actual = CommitOwnedStats(changes, before);
+            AddEvent("stats_changed", Json.Map("requested", changes, "before", before, "actual", actual));
             return ReadOwnedActor();
         }
         object ReadStatCatalog()
         {
             var fields = new List<object>();
-            foreach (string key in ScoreFields) fields.Add(Json.Map("key", key, "type", "integer", "min", 0, "max", 100, "description", StatDescription(key)));
-            foreach (string key in CounterFields) fields.Add(Json.Map("key", key, "type", "integer", "min", 0, "max", int.MaxValue, "description", StatDescription(key)));
-            foreach (string key in FlagFields) fields.Add(Json.Map("key", key, "type", "boolean", "description", StatDescription(key)));
-            fields.Add(Json.Map("key", "hasMet", "type", "boolean", "description", "Meeting talk-event markers 0/1; writes add or remove both markers."));
-            fields.Add(Json.Map("key", "isFriend", "type", "boolean", "description", "Friendship talk-event marker 2."));
-            fields.Add(Json.Map("key", "relation", "type", "reference", "description", "Relationship id, key or returned relationship object."));
+            foreach (string key in ScoreFields) fields.Add(Json.Map("key", key, "type", "integer", "min", StatMinimum(key), "max", StatMaximum(key), "adjustable", true, "description", StatDescription(key)));
+            foreach (string key in CounterFields) fields.Add(Json.Map("key", key, "type", "integer", "min", StatMinimum(key), "max", StatMaximum(key), "adjustable", true, "description", StatDescription(key)));
+            foreach (string key in FlagFields) fields.Add(Json.Map("key", key, "type", "boolean", "adjustable", false, "description", StatDescription(key)));
+            fields.Add(Json.Map("key", "hasMet", "type", "boolean", "adjustable", false, "description", "Meeting talk-event markers 0/1; writes add or remove both markers."));
+            fields.Add(Json.Map("key", "isFriend", "type", "boolean", "adjustable", false, "description", "Friendship talk-event marker 2."));
+            fields.Add(Json.Map("key", "relation", "type", "reference", "adjustable", false, "description", "Relationship id, key or returned relationship object."));
             var relations = new List<object>(); for (int id = -1; id <= 2; id++) relations.Add(RelationshipReference(id));
-            return Json.Map("fields", fields, "relationships", relations, "sceneRestricted", false, "ownershipRequired", true);
+            return Json.Map("fields", fields, "relationships", relations, "adjustment", ReadStatAdjustmentPolicy(), "sceneRestricted", false, "ownershipRequired", true);
         }
         static string StatDescription(string key)
         {

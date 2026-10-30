@@ -43,7 +43,7 @@ namespace KK_StoryNPCBridge
             {
                 if (!ownedFace.ContainsKey(p.Key)) throw new BridgeException("unsupported_field", p.Key);
                 if (p.Key == "blink") Boolean(p.Value, p.Key);
-                else if (p.Key == "eyesOpen" || p.Key == "mouthOpen") Number(p.Value, 0, 1, p.Key);
+                else if (p.Key == "eyesOpen") Number(p.Value, 0, 1, p.Key);
                 else
                 {
                     int count = p.Key == "eyes" ? ownedCha.eyesCtrl.GetMaxPtn() : p.Key == "eyebrow" ? ownedCha.eyebrowCtrl.GetMaxPtn() : ownedCha.mouthCtrl.GetMaxPtn();
@@ -67,6 +67,7 @@ namespace KK_StoryNPCBridge
             if (op == "stat_catalog") return ReadStatCatalog();
             if (op == "time_catalog") return ReadTimeCatalog();
             if (op == "native_event_catalog") return ReadNativeEventCatalog();
+            if (op == "sample_native_action") return SampleNativeAction();
             if (op == "catalog") return ReadCatalog();
             if (op == "map_catalog") return ReadMapCatalog();
             if (op.StartsWith("game.", StringComparison.Ordinal)) return ExecuteGameCommand(op, d);
@@ -97,6 +98,7 @@ namespace KK_StoryNPCBridge
                 return ClaimOwnedActor(session);
             }
             if (op == "set_stats") { RequireOwner(session); return SetOwnedStats(Object(d, "changes")); }
+            if (op == "adjust_stats") { RequireOwner(session); return AdjustOwnedStats(Text(d, "mutationId"), Object(d, "deltas")); }
             if (op == "set_waiting_indicator") { RequireOwner(session); return SetWaitingIndicator(Boolean(d.ContainsKey("visible") ? d["visible"] : null, "visible")); }
             if (op == "trigger_native_event") { RequireOwner(session); if (Recovering) throw new BridgeException("controller_disconnected", "Resume control first"); return TriggerNativeEvent(d); }
             if (op == "release")
