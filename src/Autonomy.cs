@@ -72,7 +72,7 @@ namespace KK_StoryNPCBridge
         void ObserveUncontrolledEvent(string kind, object data)
         {
             if (ownedController != null || activityPeriodId == null || disposingOwned) return;
-            if (kind == "game_dialogue" && (nativeTalkPending || currentTalk != null && ReferenceEquals(currentTalk.targetHeroine, ownedHeroine))) AppendNativeActivity("dialogue", data);
+            if (kind == "game_dialogue") AppendNativeActivity("dialogue", data);
             else if (kind.StartsWith("native_interaction_", StringComparison.Ordinal)) AppendNativeActivity(kind, data);
         }
         void SampleUncontrolledActivity()
@@ -127,10 +127,22 @@ namespace KK_StoryNPCBridge
             {
                 if (activityPeriodId == null) BeginUncontrolledPeriod("claim_snapshot");
                 SampleUncontrolledActivity(); lastHandoverReport = BuildActivityReport(true);
-                if (ownedNpc != null && ownedNpc.AI != null && ownedNpc.AI.result != null && ownedNpc.AI.result.actionNo >= 0) autonomousActionBeforeClaim = ownedNpc.AI.result.actionNo;
+                lastHandoverReport["nativePlan"] = CaptureNativePlan();
+                if (ownedNpc != null && ownedNpc.AI != null && ownedNpc.AI.result != null)
+                {
+                    int previous = ownedNpc.AI.result.actionNo;
+                    if (previous == 23 && action != null)
+                    {
+                        var targets = (IDictionary)AccessTools.Field(typeof(ActionControl), "dicTarget").GetValue(action.actCtrl);
+                        object desire = targets[ownedHeroine];
+                        previous = desire == null ? -1 : (int)AccessTools.Property(desire.GetType(), "action").GetValue(desire, null);
+                    }
+                    if (previous >= 0 && previous != 23) autonomousActionBeforeClaim = previous;
+                }
                 ownedController = session; claimedPosition = ownedNpc != null ? ownedNpc.calcPosition : Vector3.zero; claimedYaw = ownedRoot != null ? ownedRoot.transform.eulerAngles.y : 0;
                 CreateResumeToken();
                 resumeNativePending = false;
+                ClearNativePlanning(); nativeQueue.Clear(); activeTask = null;
                 if (!SceneBusy && Mode == "roaming" && ownedNpc != null && ownedNpc.AI != null) SetNativeIdle(); else stopOnRoam = true;
                 activityDirty = true; FlushAutonomyJournal();
                 AddEvent("controller_claimed", Json.Map("reportId", lastHandoverReport["reportId"], "summary", HandoverSummary()));
@@ -144,11 +156,15 @@ namespace KK_StoryNPCBridge
             {
                 ownedNpc.Pause(false); ownedNpc.move.isStop = false;
                 if (ownedAgent != null && ownedAgent.enabled && ownedAgent.isOnNavMesh) { ownedAgent.isStopped = false; ownedAgent.ResetPath(); }
-                var targets = (IDictionary)AccessTools.Field(typeof(ActionControl), "dicTarget").GetValue(action.actCtrl);
-                object desire = targets[ownedHeroine];
-                if (desire != null && (int)AccessTools.Property(desire.GetType(), "action").GetValue(desire, null) < 0 && autonomousActionBeforeClaim >= 0)
-                    AccessTools.Property(desire.GetType(), "action").SetValue(desire, autonomousActionBeforeClaim, null);
-                ownedNpc.AI.NextActionNoTarget();
+                if (action.Player != null && ReferenceEquals(action.Player.chaser, ownedNpc)) action.Player.ChaserSet(ownedNpc);
+                else
+                {
+                    var targets = (IDictionary)AccessTools.Field(typeof(ActionControl), "dicTarget").GetValue(action.actCtrl);
+                    object desire = targets[ownedHeroine];
+                    if (desire != null && (int)AccessTools.Property(desire.GetType(), "action").GetValue(desire, null) < 0 && autonomousActionBeforeClaim >= 0)
+                        AccessTools.Property(desire.GetType(), "action").SetValue(desire, autonomousActionBeforeClaim, null);
+                    ownedNpc.AI.NextActionNoTarget();
+                }
                 resumeNativePending = false; ownedState = "native_autonomy";
                 AppendNativeActivity("resumed", CaptureAutonomyState());
             }

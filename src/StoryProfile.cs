@@ -31,7 +31,18 @@ namespace KK_StoryNPCBridge
             {
                 var data = Json.Parse(File.ReadAllText(ownedStatePath, Encoding.UTF8)) as Dictionary<string, object>;
                 if (data == null || Text(data, "id") != ActorId) throw new FormatException("Invalid story NPC profile");
-                var stats = Object(data, "stats"); ValidateStats(stats);
+                var stats = Object(data, "stats");
+                if (stats.Count == 0) ValidateStats(stats);
+                foreach (var pair in stats)
+                {
+                    // Native effects can produce signed values outside the public write ranges.
+                    if (Contains(ScoreFields, pair.Key) || Contains(CounterFields, pair.Key))
+                    {
+                        double number = Number(pair.Value, int.MinValue, int.MaxValue, pair.Key);
+                        if (number != Math.Floor(number)) throw new FormatException("Invalid native integer in story NPC profile");
+                    }
+                    else ValidateStats(Json.Map(pair.Key, pair.Value));
+                }
                 foreach (var pair in stats) ownedStats[pair.Key] = pair.Value;
                 object value;
                 if (data.TryGetValue("face", out value) && value is Dictionary<string, object>)

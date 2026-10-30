@@ -14,7 +14,8 @@ namespace KK_StoryNPCBridge
         bool advInputLocked;
         float nextPlayerLineAdvance;
         int blockedAdvRequests;
-        bool AdvMouseBlocked { get { return WaitingModel || Recovering && OwnedTalkActive && dialoguePhase != "ending"; } }
+        bool internalAdvAdvance;
+        bool AdvMouseBlocked { get { return WaitingModel || ExternalWaitVisible || Recovering && OwnedTalkActive && dialoguePhase != "ending"; } }
         Rect AdvWaitingArea { get { return new Rect((Screen.width - Mathf.Min(1000, Screen.width - 48)) / 2, Mathf.Max(36, Screen.height - 410), Mathf.Min(1000, Screen.width - 48), 82); } }
         Rect AdvCancelRect { get { Rect area = AdvWaitingArea; return new Rect(area.x + 8, area.y + 34, area.width - 16, 30); } }
 
@@ -35,7 +36,8 @@ namespace KK_StoryNPCBridge
         static bool AllowAdvNextLine(ADV.TextScenario __instance)
         {
             Plugin p = Current;
-            if (p != null && p.Recovering && p.OwnedTalkActive && p.dialoguePhase != "ending") { p.blockedAdvRequests++; return false; }
+            if (p != null && p.internalAdvAdvance) return true;
+            if (p != null && (p.Recovering || p.ExternalWaitVisible) && p.OwnedTalkActive && p.dialoguePhase != "ending") { p.blockedAdvRequests++; return false; }
             if (p == null || p.managedWait == null || p.releaseAdvHold) return true;
             ADV.TextScenario held = p.ManagedAdvScenario();
             if (held != __instance) return true;
@@ -48,6 +50,12 @@ namespace KK_StoryNPCBridge
             foreach (ADV.TextScenario scenario in UnityEngine.Object.FindObjectsOfType<ADV.TextScenario>())
                 if (scenario.heroineList != null && scenario.heroineList.Contains(ownedHeroine)) return scenario;
             return null;
+        }
+        void AdvanceBridgeAdvLine(ADV.TextScenario scenario)
+        {
+            internalAdvAdvance = true;
+            try { AccessTools.Method(typeof(ADV.TextScenario), "RequestNextLine", Type.EmptyTypes, null).Invoke(scenario, new object[0]); }
+            finally { internalAdvAdvance = false; }
         }
         void SyncAdvInputLock()
         {
@@ -103,7 +111,7 @@ namespace KK_StoryNPCBridge
             { Tutorial tutorial = UnityEngine.Object.FindObjectOfType<Tutorial>(); if (tutorial != null) tutorial.EndScene(true); }
             ADV.TextScenario scenario = ManagedAdvScenario();
             if (scenario == null || scenario.textController == null || !scenario.textController.NameMessageVisible || !scenario.textController.IsCompleteDisplayText) return;
-            AccessTools.Method(typeof(ADV.TextScenario), "RequestNextLine", Type.EmptyTypes, null).Invoke(scenario, new object[0]);
+            AdvanceBridgeAdvLine(scenario);
             nextPlayerLineAdvance = Time.realtimeSinceStartup + 0.2f;
         }
         object AdvPointerProbe(Dictionary<string, object> command)
@@ -148,9 +156,10 @@ namespace KK_StoryNPCBridge
                     controls.Add(Json.Map("name", control.name, "kind", control.GetType().Name, "label", label == null ? null : label.text, "x", center.x / Screen.width, "y", 1 - center.y / Screen.height));
                 }
             }
-            Rect end = AdvCancelRect;
+            Rect end = AdvCancelRect, compose = AdvComposeRect;
             return Json.Map("locked", AdvMouseBlocked, "shieldActive", advInputShield != null && advInputShield.activeInHierarchy,
                 "controls", controls, "endX", end.center.x / Screen.width, "endY", end.center.y / Screen.height,
+                "composeX", compose.center.x / Screen.width, "composeY", compose.center.y / Screen.height,
                 "line", scenario == null ? -1 : scenario.CurrentLine,
                 "isChoice", scenario != null && scenario.isChoice,
                 "messageVisible", scenario != null && scenario.textController != null && scenario.textController.NameMessageVisible,

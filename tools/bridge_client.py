@@ -146,6 +146,7 @@ def shell(client):
     print("release | events | quit. Closing the client releases temporary NPC control.")
     print("actions | action ID [map] [seconds] | queue ID [map] [seconds] | desire ID 0..100")
     print("summon (walk to player) | native_talk | say_native text | clear_queue")
+    print("native_events | native_event KEY_OR_ID | waiting on/off")
     print("dialogue text | invite [text] | reply text | respond text | dialogue_status | dialogue_retry | dialogue_close")
     target = None
     generation = None
@@ -177,10 +178,14 @@ def shell(client):
                 show((client.last_snapshot or client.request("status"))["events"])
             elif command == "report":
                 show(client.request("status")["actors"][0]["activityReport"])
+            elif command == "plan":
+                show(client.request("native_plan", target="bridge:main"))
             elif command in {"player", "time"}:
                 show(client.request("status")["player" if command == "player" else "gameTime"])
             elif command == "stats":
                 show(client.request("stat_catalog"))
+            elif command == "native_events":
+                show(client.request("native_event_catalog"))
             elif command in {"respond", "model"}:
                 actor = client.request("status")["actors"][0]
                 conversation = actor["dialogue"]
@@ -189,6 +194,13 @@ def shell(client):
                 show(client.request("status")["actors"][0]["dialogue"])
             elif not target:
                 print("Select a heroine with use 1 first")
+            elif command == "native_event":
+                reference = int(args[0]) if args[0].isdigit() else args[0]
+                show(client.request("trigger_native_event", target=target, generation=generation, event=reference))
+            elif command == "waiting":
+                if args[0] not in {"on", "off"}:
+                    raise ValueError("Use waiting on or waiting off")
+                show(client.request("set_waiting_indicator", target=target, generation=generation, visible=args[0] == "on"))
             elif command in {"stat", "face"}:
                 changes = {}
                 for arg in args:

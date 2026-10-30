@@ -42,7 +42,7 @@ namespace KK_StoryNPCBridge
             if (p == null || !p.DialogueActive || !p.advLineActive || __instance.args.Length == 0 || __instance.args[0] != DialogueWaitMarker) return;
             if (p.currentTalk == null || !ReferenceEquals(p.currentTalk.targetHeroine, p.ownedHeroine)) return;
             p.managedWait = __instance; p.advSawHold = true; p.lastHoldProcess = Time.realtimeSinceStartup;
-            if (p.dialoguePhase != "ending") p.SetDialoguePhase(p.dialogueError != null ? "model_error" : p.heldAfter);
+            if (p.dialoguePhase != "ending" && !p.NativeEventBusy) p.SetDialoguePhase(p.dialogueError != null ? "model_error" : p.heldAfter);
         }
         static bool ProcessAdvHold(ADV.Commands.Base.Wait __instance, ref bool __result)
         {
@@ -68,6 +68,7 @@ namespace KK_StoryNPCBridge
                 "endButtonRect", AdvMouseBlocked ? new float[] { AdvCancelRect.x, AdvCancelRect.y, AdvCancelRect.width, AdvCancelRect.height, Screen.width, Screen.height } : null,
                 "blockedAdvRequests", blockedAdvRequests,
                 "pagination", ReadAdvPagination(),
+                "ui", ReadAdvControls(),
                 "requestId", modelRequestId, "requestKind", requestKind, "userText", requestUserText,
                 "nativeCommand", requestNativeCommand, "nativeMenusAvailable", nativeCommandMenusShown,
                 "responseReceived", modelReceived, "modelReplyReceived", modelReceived, "error", dialogueError, "errorCode", dialogueError == "model_timeout" ? "reply_timeout" : dialogueError,
@@ -203,7 +204,7 @@ namespace KK_StoryNPCBridge
             string text = queuedAdvText, speaker = queuedAdvSpeaker;
             heldAfter = queuedAdvAfter; queuedAdvText = null;
             releaseAdvHold = false; advSawHold = false; managedWait = null; advLineActive = true; advLineStartedAt = Time.realtimeSinceStartup;
-            SetDialoguePhase(speaker == "npc" && text.Length > 0 ? "npc_speaking" : speaker == "player" ? "user_speaking" : "waiting_model");
+            SetDialoguePhase(speaker == "npc" && text.Length > 0 ? "npc_speaking" : speaker == "player" ? "user_speaking" : heldAfter == "awaiting_input" ? "opening" : "waiting_model");
             var list = ADV.Program.Transfer.NewList(false, false);
             list.Add(ADV.Program.Transfer.Create(true, ADV.Command.CharaChange, "-2", "true"));
             if (text.Length > 0)
@@ -246,6 +247,7 @@ namespace KK_StoryNPCBridge
         }
         void TickAdvDialogue()
         {
+            if (NativeEventBusy) return;
             if (!DialogueActive) return;
             bool host = currentTalk != null && ReferenceEquals(currentTalk.targetHeroine, ownedHeroine);
             if (host) dialogueHostSeen = true;
@@ -317,6 +319,7 @@ namespace KK_StoryNPCBridge
         }
         void EndAdvDialogue(string reason)
         {
+            ClearAdvControls();
             if (!DialogueActive || dialoguePhase == "ending") return;
             AddEvent("dialogue_ending", Json.Map("conversationId", dialogueId, "reason", reason));
             if (modelRequestId != null) AddEvent("dialogue_request_cancelled", Json.Map("conversationId", dialogueId, "requestId", modelRequestId, "reason", reason));
@@ -332,6 +335,7 @@ namespace KK_StoryNPCBridge
         }
         void ResetAdvDialogue(string reason)
         {
+            ClearAdvControls();
             RestoreNativeMenuRaycasts();
             if (managedWait != null) AccessTools.Field(typeof(ADV.Commands.Base.Wait), "time").SetValue(managedWait, 0f);
             RestoreNativeDialogueMenus();
@@ -345,8 +349,10 @@ namespace KK_StoryNPCBridge
         }
         void DrawAdvDialogueOverlay()
         {
+            if (NativeEventBusy) return;
             if (!DialogueActive) return;
             if (Recovering) return;
+            if (dialoguePhase == "ready") return;
             if (dialoguePhase == "native_reaction") return;
             if (npcInvitationPending && Mode == "roaming" && !nativeTalkPending) return;
             AcquireCursor();
@@ -355,13 +361,7 @@ namespace KK_StoryNPCBridge
                 dialogueOverlayTexture = new Texture2D(1, 1); dialogueOverlayTexture.SetPixel(0, 0, new Color(0.04f, 0.065f, 0.09f, 0.94f)); dialogueOverlayTexture.Apply();
                 dialogueOverlayStyle = new GUIStyle(GUI.skin.box); dialogueOverlayStyle.normal.background = dialogueOverlayTexture;
             }
-            if (AdvMouseBlocked)
-            {
-                Rect area = AdvWaitingArea;
-                GUI.Box(new Rect(area.x, area.y, area.width, 34), "", dialogueOverlayStyle);
-                GUI.Label(new Rect(area.x + 8, area.y + 6, area.width - 16, 24), T("等待外部响应… ") + (int)(Time.realtimeSinceStartup - modelRequestedAt) + T(" 秒"));
-                return;
-            }
+            if (AdvMouseBlocked) return;
             float width = Mathf.Min(1000, Screen.width - 48), height = dialoguePhase == "awaiting_input" ? 132 : 82;
             GUILayout.BeginArea(new Rect((Screen.width - width) / 2, Mathf.Max(36, Screen.height - 410), width, height), dialogueOverlayStyle);
             if (dialoguePhase == "awaiting_input")

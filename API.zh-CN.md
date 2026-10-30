@@ -1,4 +1,4 @@
-# KK_StoryNPCBridge API 1.1.0
+# KK_StoryNPCBridge API 1.2.0
 
 [English](API.md) | 简体中文
 
@@ -11,7 +11,7 @@
 {"id":"2","op":"status"}
 ```
 
-成功回复格式为 `{ "id": "2", "ok": true, "result": ... }`。错误回复格式为 `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`。协议版本为 `2`，插件版本为 `1.1.0`。
+成功回复格式为 `{ "id": "2", "ok": true, "result": ... }`。错误回复格式为 `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`。协议版本为 `2`，插件版本为 `1.2.0`。
 
 认证和状态回复通过 `pluginName="KK_StoryNPCBridge"` 与 `pluginGuid="KK_StoryNPCBridge"` 标识插件。单个 DLL 直接安装为 `BepInEx/plugins/KK_StoryNPCBridge.dll`。
 
@@ -49,7 +49,7 @@ resume_token = recovered['resumeToken']  # 已轮换，旧 token 失效。
 
 ## 目录与引用参数
 
-`catalog` 返回 `actions`、`maps`、`expressions`、`animations`、`stats`、`time`、`idDomains`、`ui`、`generation` 和 `descriptionLanguage="en"`，无需持有控制权。目录根据当前加载的游戏安装内容发现。表情和动画要求有活动模型，可查看 `visualAvailable` 和 `visualContext`（`roaming`／`native_talk`）。进入或退出原生对话后应刷新视觉目录，对话使用独立模型／Animator。
+`catalog` 返回 `actions`、`maps`、`expressions`、`animations`、`stats`、`time`、`nativeEvents`、`idDomains`、`ui`、`generation` 和 `descriptionLanguage="en"`，无需持有控制权。目录根据当前加载的游戏安装内容发现。表情和动画要求有活动模型，可查看 `visualAvailable` 和 `visualContext`（`roaming`／`native_talk`）。进入或退出原生对话后应刷新视觉目录，对话使用独立模型／Animator。
 
 每个离散目录项都包含整数 `id`、稳定的 `key`、英文 `name` 和英文 `description`，并按需提供原生来源名称或准确的形变目标。带有 `request`／`queueRequest` 的目录项包含当前角色 generation 的命令参数；接管角色后，可直接传给 `BridgeClient.request`。客户端会补充传输层请求 ID；直接使用 TCP 的调用方必须自行添加 `id`。这些请求不会自动接管角色。重新读取故事存档或加载其他角色模型后，应刷新目录。
 
@@ -75,6 +75,7 @@ bridge.request(**phone['queueRequest'])
 | 原生计划 | 只读的原生子计划值 | `native.plansNo`／`plansName` | 仅用于观测，不是另一组可调用的任务 ID |
 | 关系 | 原生派生关系，-1 至 2 | `set_stats.changes.relation` | 接受返回的关系对象、key 或 ID |
 | 游戏时间 | 原生阶段、UI 时间段及星期 | `gameTime`、`time_catalog` | 仅观测；正式接口不提供修改玩家时钟的命令 |
+| 原生活动事件 | 原生对话事件 ID | `trigger_native_event.event` | 直接执行效果；与调度行动 ID、`commandId=eventId+10` 分属不同编号 |
 
 编号表见[中文编号参考](docs/REFERENCE.zh-CN.md)（[English](docs/REFERENCE.md)）。模型、已安装内容及当前可用性始终以运行时目录为准。
 
@@ -111,6 +112,35 @@ bridge.request('set_action', task=queued, **p)  # replay returned task directly
 
 队列项包含 `taskId`、`action`、`actionInfo`、`map`、`mapInfo`、`duration` 和可再次调用的 `request`。`set_action` 与 `queue_action` 接受通过 `task` 参数传入的已返回队列项；存在 `task` 时，使用其中的行动／地图／时长字段。再次调用会创建新任务，而不会复用原任务的标识。`duration` 为 `0` 或省略时使用原生时长；正值表示到达后执行的秒数，上限为 3600。即使 ID 有效，游戏条件和行动点占用仍可能导致 `action_unavailable`。
 
+### 原生 AI 规划观测
+
+`native_plan` 只需 `target="bridge:main"`，无需控制权或 generation。返回 `live` 和 `beforeControl`；角色状态中的 `actor.nativePlanning` 包含同样的对象。每份快照提供 `generation`、`world`、`capturedUtc`、`gameTime`、`selection`、`available` 和 `unavailableReason`。原生调度器尚未就绪时，`available=false`，行动／候选数组为空。
+
+首次成功 `claim` 的 `handoverReport.nativePlan`（也是 `activityReport.nativePlan`）直接包含**清理前**的原生 AI 规划快照，无需二次调用。随后取消原生已选行动，释放预留行动点和伙伴，清理优先选择记忆及插件任务。保留欲望值、角色属性和近期行动历史。漫游中立即进入受控待机，其他场景则在返回漫游时生效。同一控制者重复 `claim` 或认证后 `resume` 会保留原快照；释放后重新接管才生成新快照。`beforeControl` 为当前 generation 对应的最近接管快照，没有则为 `null`，不表示应自动重放被中断的行动。
+
+原生 AI 每次只选择一个行动，因此 `futureQueueAvailable=false`，没有预先排好全部未来任务的 FIFO 队列。具体观测字段如下：
+
+| 字段 | 含义 |
+| --- | --- |
+| `plannedActions` | 当前已选行动，通常为零或一项：`action`、`actionInfo`、`source`、`isPriority`、`destination`、`partner`、`plansNo`、`plansName`。受控期间描述插件所选的原生执行器状态。 |
+| `reservedDestination` | 实际预留行动点，包含地图引用和坐标，未预留则为 `null`。这是当前预留快照，不是移动历史事件。 |
+| `candidates` | 全部原生欲望条目，包含行动引用、`desire`、`isPriority`、原生 `priority`、`selectionKind`、`weight`、`priorityThresholdMet`、`eligibility` 及可执行 `request`／`queueRequest`。 |
+| `recentActions` | 按最旧到最新排列的原生近期行动历史，**不是未来任务**。 |
+| `recentPrioritySelections` | 用于抑制重复选择的原生优先行动记忆，**不是未来任务**。 |
+| `deferredPriorityActions` | 按行动 ID 排序的原生延后优先标记，不代表执行顺序。 |
+
+候选先按是否优先分组，再按欲望、原生 priority 降序，最后按 ID 排序。优先行动通常需要欲望至少 `100`；普通随机行动的当前 `weight` 为原生基础概率加欲望。`selectionKind` 为 `priority`、`weighted_random` 或 `special`，没有普通随机概率时 `weight=null`。此排序仅用于观测，不是预测的执行序列。`eligibility="not_evaluated"`：读取不会增长欲望、消耗随机数、调用行动选择或预留目标，也不保证地图／目标可用。时间、服装、排除行动、目标和行动点占用，以及后续欲望变化都可能改变原生选择。
+
+```python
+observed = bridge.request('native_plan', target='bridge:main')
+claimed = bridge.request('claim', **p)
+original_plan = claimed['handoverReport']['nativePlan']
+candidate = next(x for x in original_plan['candidates'] if x['key'] == 'use_phone')
+bridge.request(**candidate['request'])  # 显式选定；仍受原生执行条件限制。
+```
+
+generation 改变后需刷新返回的请求。行动 ID／key 沿用现有行动目录；`plansNo` 仍是只读的原生子计划值，不能作为行动编号调用。手动客户端命令 `plan` 在接管前后均可使用。
+
 ### 动画
 
 `animation_catalog` 列出从原生等待点、对话动作、控制器动画片段及常见状态中发现，并经活动 Animator 确认存在于第 0 层的状态。它不是 Studio 动画数据库，也不保证穷尽所有 Unity 状态。接口仍接受有效的原始状态字符串。每项包含 `context`、英文说明、有符号哈希及可执行的 `play_animation` 请求。与受控角色对话时，视觉命令作用于实际显示的对话模型。
@@ -125,7 +155,7 @@ bridge.request('play_animation', state=idle['id'], **p)
 
 ## 原生属性与关系
 
-`stat_catalog`（也包含于 `catalog.stats`）返回字段类型、范围、英文含义及 `relationships`。`actor.stats` 是实际原生值，`actor.relationship` 是附说明的关系引用。`set_stats.changes` 在修改前验证全部字段，写入原生状态后重新读取，并返回完整角色。`stats_changed` 包含 `requested`、`before` 和 `actual`。只要故事角色存在、调用方持有当前 generation 的控制权，即可写入，不限制漫游／ADV／地图／模型状态。
+`stat_catalog`（也包含于 `catalog.stats`）返回字段类型、写入范围、英文含义及 `relationships`。`actor.stats` 是实际原生值，`actor.relationship` 是附说明的关系引用。原生效果可能产生超出接口写入范围的值（例如负数生气值）；观测与桥接存档进度会保留这些实际值。`set_stats.changes` 在修改前验证全部字段，写入原生状态后重新读取，并返回完整角色。`stats_changed` 包含 `requested`、`before` 和 `actual`。只要故事角色存在、调用方持有当前 generation 的控制权，即可写入，不限制漫游／ADV／地图／模型状态。
 
 | 字段 | 类型／范围 | 含义 |
 | --- | --- | --- |
@@ -186,6 +216,7 @@ assert actual['stats']['relation'] == 1
 | `get` | 角色对象，包含完整 `activityReport` 和当前编号的说明 |
 | `catalog` | 所有运行时编号目录；无需 target 或控制权 |
 | `native_actions` | 角色的完整原生行动目录 |
+| `native_plan` | 只读的当前原生规划与接管前快照，无需控制权 |
 | `map_catalog` | 故事和事件地图引用；无需 target |
 | `expression_catalog` | 当前角色的表情模式目录及控制参数 |
 | `animation_catalog` | 已发现的可播放 Animator 状态 |
@@ -209,6 +240,9 @@ assert actual['stats']['relation'] == 1
 | `set_expression`／`clear_expression` | 设置上述表情引用和控制参数／清除覆盖 |
 | `play_animation` | `state` 引用、原始状态 key 或有符号状态哈希 |
 | `native_talk` | 开启原生对话场景；实际的原生对话／菜单仍可使用 |
+| `native_event_catalog` | 原生事件效果、可用性及可直接调用的引用；无需 target |
+| `trigger_native_event` | `event` 对象／key／ID；直接执行效果，返回执行状态、实际属性与跟随绑定 |
+| `set_waiting_indicator` | 布尔值 `visible`；显示／关闭 ADV 等待提示，无需会话／请求 ID |
 | `say_native` | `text`；在托管会话之外分页显示原生 ADV 回复，最多 1000 个 UTF-16 代码单元 |
 | `dialogue_open` | 可选 `text`、`initiator='player'/'npc'`、`requestInput`、`timeoutSeconds`、`afterInteractionId` |
 | `say` | `text`，可选 `requestInput`、`afterInteractionId`；开启／继续插件管理的对话流程 |
@@ -237,13 +271,46 @@ assert actual['stats']['relation'] == 1
 | `durationSeconds` | 已观察到的区间时长 |
 | `startState`、`endState` | 原生行动／地图引用、目标、数值与会话状态；不包含移动坐标 |
 | `entries` | 有序记录，字段为 `seq`、`utc`、`kind`、`data` |
+| `nativePlan` | 接管时添加：控制清理之前的原生 AI 选择、预留目标和候选快照 |
 | `entryCount`、`omittedEntries`、`counts` | 保留数量、被截断的数量及按类型统计的总数 |
 
 移动记录类型为 `map_changed`，包含 `fromMap`、`toMap`、`fromMapInfo`、`toMapInfo`。同地图内的移动不会生成轨迹或到达记录。行动记录包含英文含义及保留的原生名称。触碰／注视事件中的位置表示交互命中点，不用于追踪移动。只保留最近 256 条记录；报告并不是无限期的历史档案。
 
 ## 对话状态与结构化事件
 
-`phase` 包括 `closed`、`inviting`、`opening`、`npc_speaking`、`awaiting_input`、`waiting_reply`、`reply_error`、`ready`、`native_reaction` 和 `ending`。`waitingReply`、`mouseBlocked`、`requestId`、`requestKind`、`conversationId`、`turn` 及 `errorCode` 说明当前响应流程。返回值也提供 `state=waiting_model/model_error` 形式的名称；新客户端可使用 `phase` 判断响应状态。
+### 玩家输入与等待提示
+
+与已接管的桥接角色处于就绪原生对话时，**输入文字对话**按钮可主动打开文字输入，即使尚未建立托管会话。打开输入会创建托管会话，但只有提交文字后才请求外部响应。现有 `dialogue_reply` 接口与输入界面使用同一提交流程。
+
+控制方通过 `set_waiting_indicator` 显式控制提示：
+
+```python
+bridge.request('set_waiting_indicator', visible=True, **p)
+# 外部连接器在插件之外处理请求。
+bridge.request('set_waiting_indicator', visible=False, **p)
+```
+
+显示提示要求桥接角色的原生对话已经打开或正在进入。该操作不创建台词、模型请求或提示词，也无需 `conversationId`／`requestId`。`dialogue.ui` 返回 `playerInputAvailable`、`waitingIndicatorRequested`、`waitingIndicatorVisible`。提示显示期间，除**结束对话**外，原生 ADV 输入均被阻止。关闭提示不会解除待回复请求或重连等待造成的锁定。对话结束、释放控制或切换故事会清除提示；重连等待期内暂时隐藏，成功恢复后可重新出现。提示属于 UI，不会作为 `game_dialogue` 记录。
+
+### 实际显示的原生台词记录
+
+`game_dialogue` 只记录原生 ADV 文字命令，并等待其对话框实际显示。记录范围由原生会话参与者决定：包含桥接角色的会话保留已显示的上下文，包括桥接角色与玩家、玩家与桥接角色、桥接角色与其他 NPC 的台词及相关旁白。玩家与无关 NPC 的会话整场排除。纯语音触碰／注视反应和非 ADV 的文字更新不记录。桥接角色由原生 AI 管理时仍会记录，相关台词作为 `dialogue` 条目进入未受控行动报告。
+
+| 字段 | 含义 |
+| --- | --- |
+| `speaker`、`text` | 原生显示姓名与实际显示的文字；长回复按显示页记录 |
+| `speakerActor` | 说话者 `id`、`role`、`name`、身份来源，以及可解析时的原生班级／座位 |
+| `conversationId` | 原生会话标识；同一聊天场景的不同 ADV 脚本共用，独立 ADV 按单次会话区分 |
+| `dialogueConversationId` | 可选的托管流程 ID；不存在托管会话时为 null |
+| `conversation` | 原生 `id`、`kind`（`native_talk`／`native_adv_event`）、实际参与者引用和可选的托管 ID |
+| `source`、`nativeLine`、`gameTime` | `native_adv_text`、原生脚本行号及观测游戏时间 |
+| `bundle`、`asset` | 可用时的原生脚本来源 |
+
+说话者角色包括 `bridge`、`player`、`npc`、`narrator`、`unknown`。ID 为 `bridge:main`、`player:main`，其他 NPC 使用当前运行会话内的 `native:<world>:<roster-index>`。其他 NPC 引用仅用于观测，不授予控制权。原生角色参数与实际运行对象优先于姓名；字面姓名有重名歧义时，返回 `role='unknown'`、null `id` 和 `candidates`，不会猜测身份。`actor.nativeConversation` 保留最近记录的原生会话。这些观测记录与托管请求历史、完整回复事件相互独立。
+
+### 托管对话流程
+
+`phase` 包括 `closed`、`inviting`、`opening`、`npc_speaking`、`user_speaking`、`awaiting_input`、`waiting_reply`、`reply_error`、`ready`、`native_reaction`、`native_event` 和 `ending`。`native_event` 表示从托管会话转入活动的过渡阶段。`waitingReply`、`mouseBlocked`、`requestId`、`requestKind`、`conversationId`、`turn` 及 `errorCode` 说明当前响应流程。返回值也提供 `state=waiting_model/model_error` 形式的名称；新客户端可使用 `phase` 判断响应状态。
 
 `dialogue_request` 包含标识、请求类型，以及原生菜单命令或用户输入。原生按钮选择的 `userText=null`；桥接插件不会虚构玩家说出的话，也不会为外部应用打包提示词或历史上下文。原生菜单文字保留源内容。`commandId`、`category` 和可选 `eventId` 保留原生编号；已知邀请示例包括学习的 `eventId=8` 和跟随的 `eventId=11`。这些表示所观察到的 UI 意图，不是调度行动 ID。
 
@@ -255,7 +322,24 @@ Unity 5 的原生打字机无法安全测量补充平面 Unicode 字符（如 Em
 
 其他事件包括控制权接管／释放、任务排队／开始／到达／完成／失败／取消、对话取消，以及原生邀请接受／取消。事件和快照包含序号。重连后应刷新 generation 和请求标识；不要盲目重放过期的写入命令。
 
+## 直接执行原生活动效果
+
+`native_event_catalog` 和 `catalog.nativeEvents` 返回支持的效果。`trigger_native_event` 接受返回的目录对象、key 或数值 ID，要求控制权与当前 generation，无需 `conversationId`、`requestId`、预先聊天或邀请／接受判定。目标须在当前地图加载，处于漫游或她自己的原生聊天场景。调用前应刷新 `available`、`unavailableReason`。
+
+```python
+event = next(x for x in bridge.request('native_event_catalog') if x['key'] == 'follow_player')
+execution = bridge.request('trigger_native_event', event=event, **p)
+# 活动通过 actor.nativeEvent 或 native_event_* 事件跟踪。
+```
+
+六种效果为午餐（`4`）、社团（`5`）、一起回家（`6`）、学习（`8`）、运动（`9`）、跟随（`11`）。准确 key、原生结果编号及时间／成员条件见[编号参考](docs/REFERENCE.zh-CN.md#原生活动效果)。关系、约会约定、社团成员状态仍通过 `set_stats` 修改。
+
+跟随直接建立游戏原生的玩家跟随关系；`stop` 或新任务会清除此关系。正常释放控制会将正在进行的跟随交给游戏管理，重新接管会连同自主行为一起取消。其他效果进入游戏原生活动执行流程，仍会产生原生活动 ADV、属性变化、地图与时间推进。内部准备宿主时跳过普通问候和邀请菜单。已有托管请求以 `native_event` 原因取消，活动不会请求模型回复。请先完成原生选项或触碰／注视反应。
+
+返回值及 `actor.nativeEvent` 包含 `executionId`、事件引用、`state`（`opening`、`preparing`、`running`、`completed`、`failed`、`cancelled`）、`error`、`effectApplied`、数值 `nativeResult`、实际 `followingPlayer`、`generation`、`world`、当前 `stats`。生命周期事件为 `native_event_requested`、`native_event_started`、`native_event_completed`、`native_event_failed`、`native_event_cancelled`。完成表示原生执行流程结束；跟随仍持续到停止或交还游戏。活动期间其他动作／对话写入返回 `native_event_busy`；`set_stats`、观测、释放控制仍可使用。效果应用前可取消派发；应用后允许原生流程完成，不回滚，也不在重连后自动重放。
+
 ## 开发辅助功能与限制
+
 
 `Development.AllowGameCommands` 控制 `game.*` 辅助命令是否可用，包括故事加载、地图切换、故事推进／继续、截图、存档导出探针、原生菜单／指针探针及原生部位交互探针。`game.map` 接受返回的地图对象／key／ID，但它改变的是玩家地图，属于开发工具，不是 NPC 步行接口。
 

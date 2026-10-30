@@ -76,6 +76,9 @@ jobs:
           - Expressions and body animation in native conversations, plus long ADV replies paginated at 50 text elements per page.
           - Unexpected disconnects hold position for a configurable recovery period (60 seconds by default), with authenticated token-based resume. Normal release/close restores native AI without a grace period.
           - Actions, navigation, native dialogue events and complete activity reports through the local API. English and Chinese project guides and plugin UI.
+          - Native planning observations and the original AI selection/reservation snapshot returned directly on claim, before native work is cleared. Candidates include desire weights and replayable action references; history is identified separately from future work.
+          - Displayed bridge-related native ADV records include speaker identities and conversation participants. Native conversations offer player text input and an externally controlled waiting notice.
+          - Independent native follow, lunch, club, go-home, study and exercise effects, without invitation/refusal rolls. Native activity ADV and game effects are preserved.
 
           The native calendar exposes weekdays rather than absolute dates. Native ADV uses a square fallback for supplementary Unicode characters such as Emoji; API history retains the original text. See the API reference for recovery and per-save sidecar backup details.
 
@@ -95,6 +98,9 @@ jobs:
           - 原生对话中支持表情和身体动作；长 ADV 回复每页最多 50 个文本元素。
           - 意外断线后原地等待，默认保留 60 秒恢复期，可通过认证与私有 token 安全接续；正常释放／关闭不进入等待期。
           - 本地接口支持行动、导航、原生对话事件和完整行动报告；项目文档和插件 UI 均提供中英文。
+          - 原生规划观测与接管前 AI 选择／预留快照，在清理原生任务前直接随接管结果返回。候选提供欲望权重和可复用行动引用，历史记录单独标明。
+          - 桥接角色相关的实际原生 ADV 台词记录包含说话者身份与会话参与者；原生对话提供主动文字输入和外部控制的等待提示。
+          - 独立执行原生跟随、午餐、社团、一起回家、学习和运动效果，跳过邀请／拒绝判定，保留原生活动 ADV 及游戏效果。
 
           原生日历提供星期，没有绝对日期。原生 ADV 中 Emoji 等补充平面 Unicode 字符以方框替代，接口历史保留原文。恢复协议和分存档外置数据备份方式见 API 文档。
 

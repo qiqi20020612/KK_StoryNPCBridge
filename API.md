@@ -1,4 +1,4 @@
-# KK_StoryNPCBridge API 1.1.0
+# KK_StoryNPCBridge API 1.2.0
 
 English | [简体中文](API.zh-CN.md)
 
@@ -11,7 +11,7 @@ Use UTF-8 newline-delimited JSON over IPv4 TCP loopback. The default port is `64
 {"id":"2","op":"status"}
 ```
 
-Success is `{ "id": "2", "ok": true, "result": ... }`. Errors are `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`. The protocol version is `2`; the plugin version is `1.1.0`.
+Success is `{ "id": "2", "ok": true, "result": ... }`. Errors are `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`. The protocol version is `2`; the plugin version is `1.2.0`.
 
 Authentication and status replies identify the plugin with `pluginName="KK_StoryNPCBridge"` and `pluginGuid="KK_StoryNPCBridge"`. The single DLL installs directly as `BepInEx/plugins/KK_StoryNPCBridge.dll`.
 
@@ -49,7 +49,7 @@ Normal termination must send `release`, `release_all` or `disconnect` before clo
 
 ## Catalogs and reference inputs
 
-`catalog` returns `actions`, `maps`, `expressions`, `animations`, `stats`, `time`, `idDomains`, `ui`, `generation` and `descriptionLanguage="en"`. No ownership is needed. Catalogs are discovered from the loaded installation. Expressions and animations require an active model; check `visualAvailable` and `visualContext` (`roaming` or `native_talk`). Refresh visual catalogs when entering or leaving native talk, which uses a separate model/Animator.
+`catalog` returns `actions`, `maps`, `expressions`, `animations`, `stats`, `time`, `nativeEvents`, `idDomains`, `ui`, `generation` and `descriptionLanguage="en"`. No ownership is needed. Catalogs are discovered from the loaded installation. Expressions and animations require an active model; check `visualAvailable` and `visualContext` (`roaming` or `native_talk`). Refresh visual catalogs when entering or leaving native talk, which uses a separate model/Animator.
 
 Each discrete entry has an integer `id`, stable `key`, English `name` and English `description`. Native source names or exact morph targets are included where applicable. Entries with `request` / `queueRequest` contain command parameters with the current actor generation, ready to pass to `BridgeClient.request` after claiming control. The client adds the transport request ID; raw TCP clients must add their own `id`. Requests do not claim automatically. Refresh the catalog after loading another story or character model.
 
@@ -75,6 +75,7 @@ An object can contain `id`, `key`, or both. When both are present, they must ref
 | Native plan | Read-only native sub-plan value | `native.plansNo` / `plansName` | Preserve it for observation; it is not a separate callable task ID |
 | Relationship | Native derived relationship, -1 through 2 | `set_stats.changes.relation` | Accepts a returned relationship object, key or ID |
 | Game time | Native stages, UI periods and weekdays | `gameTime`, `time_catalog` | Observations; there is no production command to change the player clock |
+| Native activity event | Native conversation event ID | `trigger_native_event.event` | Direct effect; separate from scheduler IDs and `commandId=eventId+10` |
 
 The reference tables are in [docs/REFERENCE.md](docs/REFERENCE.md) ([简体中文](docs/REFERENCE.zh-CN.md)). Runtime catalogs remain authoritative for models, installed content and availability.
 
@@ -111,6 +112,35 @@ bridge.request('set_action', task=queued, **p)  # replay returned task directly
 
 Queue entries carry `taskId`, `action`, `actionInfo`, `map`, `mapInfo`, `duration` and a replayable `request`. `set_action` and `queue_action` accept a returned entry under `task`; when `task` is present its action/map/duration fields are used. A replay creates a new task, not the original task identity. Duration `0` or omission uses the native duration; positive values up to 3600 are seconds after arrival. Conditions and point occupancy can still produce `action_unavailable` despite a valid ID.
 
+### Native AI planning observations
+
+`native_plan` requires only `target="bridge:main"`, with no ownership or generation requirement. It returns `live` and `beforeControl`; the same object is included as `actor.nativePlanning`. Each snapshot includes `generation`, `world`, `capturedUtc`, `gameTime`, `selection`, `available` and `unavailableReason`. Before the scheduler exists, `available=false` and the action/candidate arrays are empty.
+
+On the first successful `claim`, `handoverReport.nativePlan` (also `activityReport.nativePlan`) contains the native AI snapshot **captured before cleanup**. It is returned in that call, without a second query. Claim then cancels the native selected action, releases its reserved point/partner and clears priority-selection memory and plugin tasks. Desire values, character attributes and recent-action history are preserved. Native idle takes over immediately in roaming, or on return from a scene. Repeated `claim` by the same owner and authenticated `resume` retain the original snapshot; releasing and claiming again captures a new one. `beforeControl` is that retained snapshot for the current generation, or `null` if none exists. It is not an instruction to replay interrupted work.
+
+The native AI selects one action at a time, so `futureQueueAvailable=false`. It does not maintain a FIFO schedule of all future tasks. The observed fields are:
+
+| Field | Meaning |
+| --- | --- |
+| `plannedActions` | Currently selected action, usually zero or one entry: `action`, `actionInfo`, `source`, `isPriority`, `destination`, `partner`, `plansNo` and `plansName`. During control this describes the plugin-selected native executor state. |
+| `reservedDestination` | Actual reserved wait point with map reference and position, or `null`. This is a reservation snapshot, not a movement-history event. |
+| `candidates` | All native desire entries with action references, `desire`, `isPriority`, native `priority`, `selectionKind`, `weight`, `priorityThresholdMet`, `eligibility`, and executable `request` / `queueRequest`. |
+| `recentActions` | Native recent-action history in oldest-first order; **not future tasks**. |
+| `recentPrioritySelections` | Native priority-selection memory, used to suppress repetition; **not future tasks**. |
+| `deferredPriorityActions` | Native deferred-priority markers sorted by action ID; no execution order is implied. |
+
+Candidates are grouped by priority, then sorted by descending desire and native priority, with ID as the final tie-breaker. Priority actions normally require desire at least `100`; generic actions use native base probability plus desire as their current `weight`. `selectionKind` is `priority`, `weighted_random` or `special`; `weight=null` when no generic probability applies. This ordering is descriptive, not a predicted execution sequence. `eligibility="not_evaluated"`: the observer does not grow desires, consume random numbers, invoke selection, reserve points or promise that a target/map is available. Time, clothing, excluded actions, target/point occupancy and later desire changes can alter the next native choice.
+
+```python
+observed = bridge.request('native_plan', target='bridge:main')
+claimed = bridge.request('claim', **p)
+original_plan = claimed['handoverReport']['nativePlan']
+candidate = next(x for x in original_plan['candidates'] if x['key'] == 'use_phone')
+bridge.request(**candidate['request'])  # Explicit choice; native conditions still apply.
+```
+
+Refresh returned requests after a generation change. Scheduler action IDs/keys use the existing action catalog; `plansNo` remains an observational sub-plan value, not a schedulable ID. The manual shell command `plan` works before and after claiming.
+
 ### Animations
 
 `animation_catalog` lists native wait-point, talk motion, controller-clip and common states that the active Animator confirms exist on layer 0. It is not a Studio animation database or an exhaustive enumeration of every Unity state. A valid raw state string remains accepted. Each entry includes its `context`, English explanation, signed hash and executable `play_animation` request. Both visual commands address the visible talk model during an owned conversation.
@@ -125,7 +155,7 @@ Playing `Reading` does not automatically find a seat, add a book or run action `
 
 ## Native attributes and relationships
 
-`stat_catalog` (also `catalog.stats`) returns field types, ranges, English meanings and `relationships`. `actor.stats` contains the actual native values and `actor.relationship` their descriptive relation. `set_stats.changes` validates all fields before changing state, writes native state, reads it back and returns the complete actor. `stats_changed` carries `requested`, `before` and `actual`. No roaming/ADV/map/model restriction applies once the story actor exists and the caller owns its current generation.
+`stat_catalog` (also `catalog.stats`) returns field types, write ranges, English meanings and `relationships`. `actor.stats` contains the actual native values and `actor.relationship` their descriptive relation. Native effects may produce values outside the API write ranges (for example negative anger); observations and saved bridge progress preserve those values. `set_stats.changes` validates all fields before changing state, writes native state, reads it back and returns the complete actor. `stats_changed` carries `requested`, `before` and `actual`. No roaming/ADV/map/model restriction applies once the story actor exists and the caller owns its current generation.
 
 | Field | Type / range | Meaning |
 | --- | --- | --- |
@@ -186,10 +216,12 @@ Unless stated otherwise, actor commands take `target`; write commands also take 
 | `get` | Actor object, including full `activityReport` and descriptive current IDs |
 | `catalog` | All runtime ID catalogs; no target or ownership needed |
 | `native_actions` | Full native action directory for the actor |
+| `native_plan` | Read-only live native planning and pre-control snapshot; no ownership needed |
 | `map_catalog` | Story and event map references; no target needed |
 | `expression_catalog` | Actor-specific facial pattern directory and controls |
 | `animation_catalog` | Discovered playable Animator states |
 | `stat_catalog` / `time_catalog` | Native attribute/relationship definitions / stage, period and weekday references |
+| `native_event_catalog` | Direct native activity effects, availability and executable references; no target needed |
 | `claim` | Actor plus complete `activityReport`, identical `handoverReport`, private `resumeToken` and `world`; idempotent for the same owner |
 | `resume` | `resumeToken`, current target/generation; recover reserved ownership and rotate token |
 | `release` | Optional `restorePosition` boolean; restores native AI and returns actor/current interval |
@@ -209,6 +241,8 @@ Unless stated otherwise, actor commands take `target`; write commands also take 
 | `set_expression` / `clear_expression` | Facial references and controls described above / clear override |
 | `play_animation` | `state` reference, raw state key or signed state hash |
 | `native_talk` | Start the native talk scene; actual native dialogue/menu remains available |
+| `trigger_native_event` | `event` object/key/ID; execute a native activity effect directly; returns execution state, actual stats and follow binding |
+| `set_waiting_indicator` | Boolean `visible`; show/hide the essential ADV waiting notice; no conversation/request ID needed |
 | `say_native` | `text`; paginated native ADV reply outside a managed conversation; up to 1000 UTF-16 units |
 | `dialogue_open` | Optional `text`, `initiator='player'/'npc'`, `requestInput`, `timeoutSeconds`, `afterInteractionId` |
 | `say` | `text`, optional `requestInput`, `afterInteractionId`; start/continue managed dialogue |
@@ -237,13 +271,46 @@ Actor-valued replies and snapshot actors include `activityReport`. While uncontr
 | `durationSeconds` | Observed interval duration |
 | `startState`, `endState` | Native action/map references, target, stats and conversation state; no movement coordinates |
 | `entries` | Ordered records with `seq`, `utc`, `kind`, `data` |
+| `nativePlan` | Added on claim: native AI selection, reservation and candidate snapshot captured before control cleanup |
 | `entryCount`, `omittedEntries`, `counts` | Retained count, truncated count and per-kind totals |
 
 Movement entries are `map_changed`: `fromMap`, `toMap`, `fromMapInfo`, `toMapInfo`. Same-map movement does not create trajectory or arrival records. Action entries carry English meanings and preserved native names. Touch/look event positions refer to the interaction hit location, not movement tracking. The most recent 256 records are retained; a report is not an unlimited historical archive.
 
 ## Dialogue states and structured events
 
-`phase` includes `closed`, `inviting`, `opening`, `npc_speaking`, `awaiting_input`, `waiting_reply`, `reply_error`, `ready`, `native_reaction` and `ending`. `waitingReply`, `mouseBlocked`, `requestId`, `requestKind`, `conversationId`, `turn` and `errorCode` explain the current response workflow. The response also exposes `state=waiting_model/model_error` names; new clients can use `phase` for the response state.
+### Player input and waiting notice
+
+During a ready native conversation with the claimed bridge NPC, **Write a message** opens text input even when no managed dialogue exists. Opening the input creates a managed conversation, but requests an external response only after submission. The existing `dialogue_reply` API and input UI share the same submission path.
+
+The owner explicitly controls the notice with `set_waiting_indicator`:
+
+```python
+bridge.request('set_waiting_indicator', visible=True, **p)
+# External connector work happens outside the plugin.
+bridge.request('set_waiting_indicator', visible=False, **p)
+```
+
+Showing it requires the bridge NPC's native conversation or its pending opening. It creates no utterance, model request or prompt. `dialogue.ui` returns `playerInputAvailable`, `waitingIndicatorRequested` and `waitingIndicatorVisible`. While visible, native ADV input is blocked except **End conversation**. Hiding it does not clear a pending reply request or recovery lock. It clears when the conversation ends, ownership is released or the story changes; during a recovery grace period it is hidden and can reappear after a valid resume. The notice is UI only and is never a `game_dialogue` line.
+
+### Displayed native dialogue records
+
+`game_dialogue` records actual native ADV text commands only after their message window is shown. Scope is the native conversation's participants: a conversation involving the bridge NPC retains its displayed context, including bridge-to-player, player-to-bridge and bridge-to-other-NPC lines and related narration. Player conversations with unrelated NPCs are excluded as a whole. Voice-only touch/look reactions and non-ADV text updates are excluded. Recording also runs while the bridge NPC uses native AI; those related lines enter the uncontrolled activity report as `dialogue` records.
+
+| Field | Meaning |
+| --- | --- |
+| `speaker`, `text` | Native display name and displayed text; supplied long replies appear as displayed pages |
+| `speakerActor` | Speaker `id`, `role`, `name`, identity source and native class/seat when resolved |
+| `conversationId` | Native host identity; stable across ADV scripts in one talk scene, or scoped to one standalone ADV episode |
+| `dialogueConversationId` | Optional managed workflow ID; null when no managed dialogue is active |
+| `conversation` | Native `id`, `kind` (`native_talk` / `native_adv_event`), actual participant references and optional managed ID |
+| `source`, `nativeLine`, `gameTime` | `native_adv_text`, native script line index and observed game time |
+| `bundle`, `asset` | Native script source identifiers when available |
+
+Speaker roles are `bridge`, `player`, `npc`, `narrator` or `unknown`. IDs are `bridge:main`, `player:main` and session-local `native:<world>:<roster-index>` for other NPCs. Other NPC references are observational and do not grant control. Native character parameters and actual runtime character references take precedence over names. Ambiguous literal names return `role='unknown'`, null `id` and `candidates`; the plugin does not guess between same-name characters. `actor.nativeConversation` retains the most recently recorded native conversation. These records are observations, separate from managed request history and complete supplied reply events.
+
+### Managed dialogue workflow
+
+`phase` includes `closed`, `inviting`, `opening`, `npc_speaking`, `user_speaking`, `awaiting_input`, `waiting_reply`, `reply_error`, `ready`, `native_reaction`, `native_event` and `ending`. `native_event` marks the transition from a managed conversation into an activity. `waitingReply`, `mouseBlocked`, `requestId`, `requestKind`, `conversationId`, `turn` and `errorCode` explain the current response workflow. The response also exposes `state=waiting_model/model_error` names; new clients can use `phase` for the response state.
 
 `dialogue_request` contains identifiers, kind and the native menu command or user input. Native button choices have `userText=null`; the bridge does not invent a player utterance or package a prompt/history for the external application. Native menu labels remain source content. `commandId`, `category` and optional `eventId` retain native numbering; known invitation examples are `eventId=8` for studying and `eventId=11` for following. These are observed UI intents, not scheduler action IDs.
 
@@ -254,6 +321,22 @@ Supplied replies are displayed through native ADV in pages of at most 50 Unicode
 Unity 5's native typewriter cannot safely measure supplementary Unicode characters (for example Emoji). Only native presentation substitutes each such character with `□`; API history and original page text are preserved. `nonBmpFallbacks` reports the number of substitutions in the reply. Invalid unpaired UTF-16 surrogates are rejected before displaying text.
 
 Other events include controller claims/releases, task queued/started/arrived/completed/failed/cancelled, dialogue cancellation and native invitation acceptance/cancellation. Events and snapshots contain sequence numbers. After reconnecting, refresh generation and request identifiers; never replay stale write commands blindly.
+
+## Direct native activity effects
+
+`native_event_catalog` and `catalog.nativeEvents` list supported effects. `trigger_native_event` accepts a returned entry, its key or numeric ID. It requires ownership and the current generation, but no `conversationId`, `requestId`, prior chat or invitation/acceptance roll. The target must be loaded on the current map in roaming or its own native talk scene. Check each entry's `available` and `unavailableReason` immediately before calling.
+
+```python
+event = next(x for x in bridge.request('native_event_catalog') if x['key'] == 'follow_player')
+execution = bridge.request('trigger_native_event', event=event, **p)
+# For activities, observe actor.nativeEvent or native_event_* lifecycle events.
+```
+
+The six effects are lunch (`4`), club activities (`5`), going home together (`6`), studying (`8`), exercise (`9`) and following (`11`). Exact keys, native result IDs and time/membership requirements are in the [ID reference](docs/REFERENCE.md#native-activity-effects). Relationships, date promises and club membership flags remain writable through `set_stats`.
+
+Follow establishes the game's native player-follow relation; `stop` or a new task clears that relation. Normal release hands an active follow to the game; claiming again cancels it with the autonomous activity. Other effects enter the game's activity execution flow; native activity ADV, stat changes, maps and time progression still occur. Internal host preparation omits ordinary greetings and invitation menus. An existing managed reply request is cancelled with reason `native_event`; the native activity does not request a model response. Finish any native choice or touch/look reaction first.
+
+Replies and `actor.nativeEvent` contain `executionId`, event reference, `state` (`opening`, `preparing`, `running`, `completed`, `failed`, `cancelled`), `error`, `effectApplied`, numeric `nativeResult`, actual `followingPlayer`, `generation`, `world` and current `stats`. Lifecycle events are `native_event_requested`, `native_event_started`, `native_event_completed`, `native_event_failed` and `native_event_cancelled`. Completion means the dispatched native flow has ended; follow remains active until stopped or handed back to the game. While an activity runs, other action/dialogue writes return `native_event_busy`; `set_stats`, observation and release remain available. Cancellation before effect application prevents dispatch; once applied, native execution is allowed to finish and is not rolled back or automatically replayed after reconnecting.
 
 ## Development helpers and limits
 

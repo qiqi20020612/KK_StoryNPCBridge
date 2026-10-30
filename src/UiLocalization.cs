@@ -71,6 +71,8 @@ namespace KK_StoryNPCBridge
             { " 秒", " seconds" },
             { "NPC 正在主动邀聊，请按本体提示回应…", "NPC is inviting you to talk. Respond to the native prompt..." },
             { "发送", "Send" },
+            { "输入文字对话", "Write a message" },
+            { "等待模型响应…", "Waiting for response..." },
             { "响应失败：", "Response failed: " },
             { "正在结束对话…", "Closing dialogue..." },
             { "正在进入对话…", "Opening dialogue..." },

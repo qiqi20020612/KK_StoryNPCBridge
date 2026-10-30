@@ -27,9 +27,13 @@ These targeting modes are planned features, not capabilities of the current vers
 - Keep bridge progress independently for each story save; first creation starts with zero scores/counters and false exposed state flags.
 - Control expressions and body animation during roaming and native conversations.
 - Schedule native actions immediately or queue the next tasks.
+- Observe native AI selections, reserved destinations and desire-weighted candidates; taking control returns the original planning snapshot before clearing native work.
 - Walk to the player using native navigation, including cross-map routes.
 - Use native ADV dialogue with user input, external-response waiting, NPC-initiated invitations and long replies paginated at 50 text elements per page.
 - Report native dialogue choices and distinguish touch from look while preserving original body reactions.
+- Record displayed native ADV lines involving the bridge NPC, with speaker identities and conversation participants; unrelated conversations and voice-only reactions are excluded.
+- Let the player open text input from a native conversation; external connectors explicitly show/hide a waiting indicator without injecting dialogue.
+- Execute native follow, lunch, club, go-home, study and exercise effects independently through the API, without an invitation/refusal roll.
 - Return activity reports directly when taking control; movement history records map changes only.
 - Discover English ID descriptions and reuse returned catalog entries, keys, numeric IDs or request templates in calls.
 - Hold position after an unexpected disconnect and safely resume within a configurable grace period (60 seconds by default).
@@ -138,7 +142,7 @@ The output is `artifacts/build/KK_StoryNPCBridge.dll`, targeting .NET Framework 
 To create the release DLL, installation ZIP and SHA-256 checksums:
 
 ```powershell
-pwsh -File tools/package-release.ps1 -Tag v1.1.0
+pwsh -File tools/package-release.ps1 -Tag v1.2.0
 ```
 
 GitHub Actions builds pushes and pull requests. Pushing a `v<version>` tag builds and publishes a release after checking that the tag matches the DLL version.

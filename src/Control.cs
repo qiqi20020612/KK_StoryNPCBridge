@@ -66,6 +66,7 @@ namespace KK_StoryNPCBridge
             if (op == "status" || op == "list") return Snapshot();
             if (op == "stat_catalog") return ReadStatCatalog();
             if (op == "time_catalog") return ReadTimeCatalog();
+            if (op == "native_event_catalog") return ReadNativeEventCatalog();
             if (op == "catalog") return ReadCatalog();
             if (op == "map_catalog") return ReadMapCatalog();
             if (op.StartsWith("game.", StringComparison.Ordinal)) return ExecuteGameCommand(op, d);
@@ -81,6 +82,7 @@ namespace KK_StoryNPCBridge
             if (op == "activity_report") return ReadActivityReport(d);
             if (op == "dialogue_status") return ReadDialogue();
             if (op == "native_actions") return ReadNativeActions();
+            if (op == "native_plan") return ReadNativePlanning();
             if (op == "expression_catalog") return ReadExpressionCatalog();
             if (op == "animation_catalog") return ReadAnimationCatalog();
             if (op == "spawn" || op == "despawn" || op == "respawn") throw new BridgeException("native_lifecycle", "Native NPC lifecycle is managed by story loading; reload the story to recreate her");
@@ -95,12 +97,15 @@ namespace KK_StoryNPCBridge
                 return ClaimOwnedActor(session);
             }
             if (op == "set_stats") { RequireOwner(session); return SetOwnedStats(Object(d, "changes")); }
+            if (op == "set_waiting_indicator") { RequireOwner(session); return SetWaitingIndicator(Boolean(d.ContainsKey("visible") ? d["visible"] : null, "visible")); }
+            if (op == "trigger_native_event") { RequireOwner(session); if (Recovering) throw new BridgeException("controller_disconnected", "Resume control first"); return TriggerNativeEvent(d); }
             if (op == "release")
             {
                 RequireOwner(session); object restore;
                 bool revert = d.TryGetValue("restorePosition", out restore) && Boolean(restore, "restorePosition");
                 ReleaseOwned("released", revert); return ReadOwnedActor();
             }
+            if (NativeEventBusy) throw new BridgeException("native_event_busy", "Wait for the current native activity to finish");
             bool dialogueCommand = op.StartsWith("dialogue_", StringComparison.Ordinal) || op == "model_reply" || op == "model_error" || op == "say";
             bool visualCommand = op == "set_expression" || op == "clear_expression" || op == "play_animation";
             bool talkCommand = op == "claim" || op == "say_native" || dialogueCommand || visualCommand;

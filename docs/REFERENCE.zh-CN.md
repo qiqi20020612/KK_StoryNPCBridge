@@ -62,7 +62,24 @@
 | 5 | `saturday` | 星期六 |
 | 6 | `holiday` | 星期日／假日 |
 
+## 原生活动效果
+
+`trigger_native_event.event` 接受 `native_event_catalog`／`catalog.nativeEvents` 返回的对象、key 或数值 ID。这些属于原生对话事件编号，与日常调度行动不同。`commandId` 为原生 UI 命令（事件 ID + 10）。接口直接应用成功的原生效果，跳过邀请／拒绝判定，无需预先开启聊天。请检查实时可用性；NPC 须在当前地图加载。
+
+| 事件 ID | Key | 效果 | 命令 ID | 原生结果 | 附加条件 |
+| --- | --- | --- | --- | --- | --- |
+| 4 | `eat_lunch` | 一起吃午餐 | 14 | `3 / lunch` | 午餐阶段 5；`isLunch=false` |
+| 5 | `club_activity` | 一起参加社团活动 | 15 | `4 / club` | 社团阶段 8；`isStaff=true` |
+| 6 | `go_home_together` | 一起回家 | 16 | `5 / gohome` | 放学阶段 9 |
+| 8 | `study_together` | 一起学习 | 18 | `6 / study` | 自由阶段 5、8、9 |
+| 9 | `exercise_together` | 一起运动 | 19 | `7 / exercise` | 自由阶段 5、8、9 |
+| 11 | `follow_player` | 跟随玩家 | 21 | `1 / chase` | 漫游或该 NPC 的原生对话已就绪 |
+
+活动场景保留原生 ADV 及时间／状态效果；跟随使用原生玩家跟随绑定。关系、约会约定、成员状态使用 `set_stats`。原生按钮拦截仅上报意图，外部控制方显式调用后才执行效果。
+
 ## 原生调度行动
+
+`native_plan` 使用同一套引用观测已选行动及当前欲望权重候选；`claim` 的 `handoverReport.nativePlan` 直接返回接管前快照。原生 AI 每次选择一个行动，近期行动及优先选择记忆不是未来任务队列；候选顺序只作说明，不保证可执行或实际执行。详见 [原生 AI 规划观测](../API.zh-CN.md#原生-ai-规划观测)。
 
 用于 `set_action.action`、`queue_action.action` 或 `set_desire.action`。行动 -1 表示插件空闲状态，不能作为可调度任务，请使用 `stop`。有效的行动 ID 仍可能因游戏条件、行动点占用或缺少原生目标而不可用。实时结果中的 `mapsWithPoints` 数组列出具有相应行动点层的地图，`mapDetails` 则提供各地图的说明。
 

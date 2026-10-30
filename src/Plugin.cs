@@ -19,7 +19,7 @@ namespace KK_StoryNPCBridge
     [BepInProcess("Koikatsu Party.exe")]
     public sealed partial class Plugin : BaseUnityPlugin
     {
-        public const string Version = "1.1.0";
+        public const string Version = "1.2.0";
         public const string PluginGuid = "KK_StoryNPCBridge";
         public const string PluginName = "KK_StoryNPCBridge";
         public const int Protocol = 2;
@@ -59,7 +59,7 @@ namespace KK_StoryNPCBridge
                 harmony = new Harmony(PluginGuid);
                 harmony.Patch(AccessTools.Method(typeof(TextController), "Set", new Type[] { typeof(string), typeof(string) }, null), null,
                     new HarmonyMethod(typeof(Plugin).GetMethod("TextSetPostfix", BindingFlags.Static | BindingFlags.NonPublic)), null, null, null);
-                InstallNativeHooks(); InstallDialogueHooks(); InstallAdvInputHooks(); InstallNativeCommandHooks(); InstallTimeHooks(); InitializeControlRecovery();
+                InstallNativeHooks(); InstallDialogueHooks(); InstallAdvInputHooks(); InstallNativeCommandHooks(); InstallTimeHooks(); InitializeControlRecovery(); InstallAdvRecordHooks(); InstallNativeEventHooks();
                 Logger.LogInfo(PluginName + " " + Version + " dedicated actor " + ActorId + "; 127.0.0.1:" + port + "; " + panelShortcut);
             }
             catch (Exception e) { Logger.LogError(e); if (server != null) server.Dispose(); server = null; }
@@ -72,7 +72,7 @@ namespace KK_StoryNPCBridge
             {
                 if (panelShortcut.IsDown()) TogglePanel();
                 if (ownedController == panelOwner) System.Threading.Interlocked.Exchange(ref panelOwner.LastSeen, DateTime.UtcNow.Ticks);
-                RefreshWorld(); TickOwnedActor(); TickGameTime(); TickAutonomyJournal(); TickNativeInteractions(); TickAdvDialogue(); TickPlayerLineWhileWaiting(); SyncAdvInputLock();
+                RefreshWorld(); TickOwnedActor(); TickGameTime(); TickAutonomyJournal(); TickNativeInteractions(); TickNativeEvents(); TickAdvDialogue(); TickPlayerLineWhileWaiting(); TickAdvControls(); SyncAdvInputLock();
                 for (int i = 0; i < 8; i++)
                 {
                     Request request = server.Pop(); if (request == null) break;
@@ -96,6 +96,7 @@ namespace KK_StoryNPCBridge
         }
         void LateUpdate()
         {
+            try { TickAdvRecords(); } catch (Exception e) { Logger.LogWarning("ADV record: " + e.Message); }
             if (ownedCha == null || !ownedReady || ownedRoot == null || !ownedRoot.activeInHierarchy) return;
             try
             {
@@ -115,6 +116,7 @@ namespace KK_StoryNPCBridge
                 if (panelBackground != null) UnityEngine.Object.Destroy(panelBackground);
                 if (dialogueOverlayTexture != null) UnityEngine.Object.Destroy(dialogueOverlayTexture);
                 if (advInputShield != null) UnityEngine.Object.Destroy(advInputShield);
+                if (advControlsCanvas != null) UnityEngine.Object.Destroy(advControlsCanvas);
                 if (Current == this) Current = null;
             }
         }
@@ -175,10 +177,10 @@ namespace KK_StoryNPCBridge
             if (events.Count > 40) events.RemoveAt(0);
             ObserveUncontrolledEvent(kind, data);
         }
-        static void TextSetPostfix(string __0, string __1)
+        static void TextSetPostfix(TextController __instance, string __0, string __1)
         {
             if (Current == null) return;
-            try { Current.AddEvent("game_dialogue", Json.Map("speaker", __0, "text", __1)); Current.TrackAdvPage(__1); }
+            try { Current.QueueAdvRecord(__instance, __0, __1); }
             catch (Exception e) { Current.Logger.LogWarning(e.Message); }
         }
         static object Vector(Vector3 value) { return new float[] { value.x, value.y, value.z }; }

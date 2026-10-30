@@ -116,9 +116,12 @@ namespace KK_StoryNPCBridge
                 "nativeNpcComponents", NativeComponentCount(), "nativeBehaviorTrees", NativeTreeCount(), "inNativeRoster", InNativeRoster(),
                 "instances", OwnedInstanceCount(), "nativeRosterAtSpawn", rosterCountAtSpawn, "nativeNpcsAtSpawn", npcCountAtSpawn);
             actor.Add("native", ReadNativeStatus());
+            actor.Add("nativePlanning", ReadNativePlanning());
             actor.Add("approach", ReadApproach());
             actor.Add("dialogue", ReadDialogue());
             actor.Add("nativeInteraction", ReadNativeInteraction());
+            actor.Add("nativeConversation", lastAdvConversation);
+            actor.Add("nativeEvent", ReadNativeEventRun());
             actor.Add("autonomy", ReadAutonomyState());
             actor.Add("activityReport", CurrentActivityReport());
             if (VisualActorReady)
@@ -163,7 +166,8 @@ namespace KK_StoryNPCBridge
         void ReleaseOwned(string reason, bool restorePosition)
         {
             if (ownedController == null && !ownedMoving && activeTask == null && nativeQueue.Count == 0 && !Approaching && !DialogueActive) return;
-            ClearControlRecovery(); FinishApproach("cancelled", reason);
+            CancelPendingNativeEvent(reason); ownedNativeFollow = false;
+            ClearControlRecovery(); ClearAdvControls(); FinishApproach("cancelled", reason);
             if (DialogueActive) EndAdvDialogue(reason);
             if (activeTask != null) AddEvent("native_action_cancelled", activeTask.Read());
             activeTask = null; nativeQueue.Clear(); ownedMoving = false; faceOverride = false; animationOverride = false;

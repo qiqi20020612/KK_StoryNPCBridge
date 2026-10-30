@@ -62,7 +62,24 @@ Stages 0–4 map to period 0, 5–7 to 1, 8 to 2, 9–10 to 3 and 11 to 4.
 | 5 | `saturday` | Saturday |
 | 6 | `holiday` | Sunday / holiday |
 
+## Native activity effects
+
+Use `trigger_native_event.event` with an entry from `native_event_catalog` / `catalog.nativeEvents`, its key or its numeric ID. These are native conversation event IDs, separate from scheduler action IDs. `commandId` is the native UI command (`event ID + 10`). The accepted native result is applied directly, without an invitation/refusal roll or a pre-existing conversation. Check live availability; the NPC must be loaded on the current map.
+
+| Event ID | Key | Effect | Command ID | Native result | Additional requirements |
+| --- | --- | --- | --- | --- | --- |
+| 4 | `eat_lunch` | Eat lunch together | 14 | `3 / lunch` | Lunch stage 5; `isLunch=false` |
+| 5 | `club_activity` | Do club activities together | 15 | `4 / club` | Staff stage 8; `isStaff=true` |
+| 6 | `go_home_together` | Go home together | 16 | `5 / gohome` | After-school stage 9 |
+| 8 | `study_together` | Study together | 18 | `6 / study` | Free stage 5, 8 or 9 |
+| 9 | `exercise_together` | Exercise together | 19 | `7 / exercise` | Free stage 5, 8 or 9 |
+| 11 | `follow_player` | Follow the player | 21 | `1 / chase` | Ready roaming or the NPC's native conversation |
+
+Activity scenes retain their native ADV and time/state effects. Follow uses the native player-follow binding. Relationship/date/membership state changes use `set_stats`; button interception remains observational until the external controller explicitly executes an effect.
+
 ## Native scheduler actions
+
+`native_plan` observes selected actions and current desire-weighted candidates using these same references; `claim` returns the pre-control snapshot in `handoverReport.nativePlan`. The native AI chooses one action at a time. Its recent-action and priority memory are not a future task queue; candidate order is descriptive and does not guarantee eligibility or execution. See [Native AI planning observations](../API.md#native-ai-planning-observations).
 
 Use in `set_action.action`, `queue_action.action` or `set_desire.action`. Action -1 is plugin idle and is not schedulable; use `stop`. A valid action ID can still be unavailable because of game conditions, occupied points or missing native targets. The `mapsWithPoints` array in the live result identifies maps with the correct point layer and `mapDetails` explains each one.
 

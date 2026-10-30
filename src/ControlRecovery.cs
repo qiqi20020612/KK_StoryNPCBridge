@@ -40,6 +40,7 @@ namespace KK_StoryNPCBridge
             recoveryStartedAt = Time.realtimeSinceStartup; recoveryDeadline = recoveryStartedAt + recoveryGraceSeconds;
             recoveryDeadlineUtc = DateTime.UtcNow.AddSeconds(recoveryGraceSeconds).ToString("o");
             recoveryInterruptedTask = ReadNativeStatus();
+            CancelPendingNativeEvent("connection_lost");
             if (resumeToken == null) CreateResumeToken();
             if (!SceneBusy && Mode == "roaming" && ownedNpc != null && ownedNpc.AI != null) StopOwnedMotion("connection_lost");
             else

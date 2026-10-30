@@ -155,6 +155,8 @@ namespace KK_StoryNPCBridge
             SyncOwnedStats(); SaveOwnedProfile(); SaveNativeProfile();
             save.heroineList.Add(heroine);
             ownedGeneration = Guid.NewGuid().ToString("N");
+            ResetAdvRecords(); ClearAdvControls();
+            nativeEventRun = null; ownedNativeFollow = false;
             AddEvent("actor_initialized", Json.Map("profile", ReadStoryProfile(), "stats", new Dictionary<string, object>(ownedStats)));
             nativeQueue.Clear(); activeTask = null; initialSummonPending = false; approachState = "none";
             resumeNativePending = false; BeginUncontrolledPeriod("world_loaded");
@@ -216,6 +218,11 @@ namespace KK_StoryNPCBridge
         ActionControl.ResultInfo DecideNativeAction(ActionControl control)
         {
             decisionCount++;
+            if (ownedNativeFollow && action != null && action.Player != null && ReferenceEquals(action.Player.chaser, ownedNpc))
+            {
+                var follow = control.SetAction(ownedHeroine, 23, -1);
+                if (follow != null && follow.actionNo == 23) return follow;
+            }
             if (Approaching) FinishApproach("failed", "native_action_interrupted");
             if (activeTask != null) { AddEvent("native_action_completed", activeTask.Read()); activeTask = null; }
             while (nativeQueue.Count > 0)
@@ -302,6 +309,7 @@ namespace KK_StoryNPCBridge
         }
         void SetNativeIdle()
         {
+            EndOwnedNativeFollow();
             if (npcInvitationPending && DialogueActive && dialoguePhase != "ending") EndAdvDialogue("new_command");
             FinishApproach("cancelled", "new_command");
             nativeQueue.Clear();
@@ -336,10 +344,12 @@ namespace KK_StoryNPCBridge
             if (op == "queue_action")
             {
                 if (nativeQueue.Count >= 32) throw new BridgeException("queue_full", "At most 32 tasks");
+                EndOwnedNativeFollow();
                 nativeQueue.Enqueue(next); AddEvent("native_action_queued", next.Read());
                 if (activeTask == null && !Approaching && Mode == "roaming") { animationOverride = false; ownedNpc.Pause(false); ownedNpc.AI.NextAction(new int[0]); }
                 return ReadNativeStatus();
             }
+            EndOwnedNativeFollow();
             FinishApproach("cancelled", "new_task");
             var resolved = ResolveNativeTask(action.actCtrl, next);
             if (resolved == null) { SetNativeIdle(); throw new BridgeException("action_unavailable", "The native game cannot schedule this action at the requested map/time"); }

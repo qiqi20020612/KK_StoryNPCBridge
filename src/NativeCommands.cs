@@ -23,6 +23,7 @@ namespace KK_StoryNPCBridge
         static bool RouteNativeCommand(TalkScene __instance, int __0)
         {
             Plugin p = Current;
+            if (p != null && p.nativeEventCommand) return true;
             if (p == null || !ReferenceEquals(__instance.targetHeroine, p.ownedHeroine) || p.ownedController == null && !p.DialogueActive) return true;
             if (__0 == -1)
             {
@@ -37,7 +38,7 @@ namespace KK_StoryNPCBridge
         }
         bool NativeInputReady(TalkScene talk)
         {
-            if (SceneBusy || !NativeTalkReady(talk)) return false;
+            if (SceneBusy || NativeEventBusy || ExternalWaitVisible || !NativeTalkReady(talk)) return false;
             return !DialogueActive || (dialoguePhase == "ready" || dialoguePhase == "awaiting_input") && !WaitingModel && (!advLineActive || !releaseAdvHold);
         }
         void SubmitNativeIntent(TalkScene talk, Dictionary<string, object> intent)
