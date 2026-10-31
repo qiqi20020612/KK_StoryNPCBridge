@@ -127,7 +127,7 @@ namespace KK_StoryNPCBridge
             if (DialogueActive) ResetAdvDialogue("world_changed");
             SelectStoryProfile();
             ownedController = null; ownedNpc = null; ownedRoot = null; ownedCha = null; ownedAgent = null;
-            ownedReady = false; ownedMoving = false; nativeTalkPending = false; faceOverride = false; animationOverride = false; disposingOwned = false;
+            ownedReady = false; ownedMoving = false; nativeTalkPending = false; ClearFaceOverride(); animationOverride = false; disposingOwned = false;
             if (idlePoint != null) UnityEngine.Object.Destroy(idlePoint.gameObject); idlePoint = null;
             int seat = -1;
             for (int index = 24; index >= 0; index--)
@@ -324,7 +324,7 @@ namespace KK_StoryNPCBridge
             {
                 RequireActor();
                 if (!ownedNpc.isAction) throw new BridgeException("not_interactable", "The current native action prevents conversation");
-                SetNativeIdle(); faceOverride = false;
+                SetNativeIdle(); ClearFaceOverride();
                 nativeTalkPending = true;
                 if (panelVisible) TogglePanel();
                 var routine = (IEnumerator)AccessTools.Method(typeof(ActionScene), "_SceneEventNPC", new Type[] { typeof(NPC) }, null).Invoke(action, new object[] { ownedNpc });
@@ -375,7 +375,7 @@ namespace KK_StoryNPCBridge
         {
             if (action == null || action.Player == null || Mode != "roaming" || action.Player.isActionNow_Origin || ownedNpc.isTalking)
                 throw new BridgeException("not_interactable", "The player or NPC is busy with another native interaction");
-            SetNativeIdle(); faceOverride = false;
+            SetNativeIdle(); ClearFaceOverride();
             var task = new NativeTask { Action = 8, Map = -1 };
             var result = ResolveNativeTask(action.actCtrl, task);
             if (result == null) throw new BridgeException("invitation_unavailable", "Native NPC invitation conditions are not satisfied");

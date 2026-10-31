@@ -82,15 +82,19 @@ def main():
              table(["ID", "Key", "English meaning"],
                    [(r["id"], "`" + r["key"] + "`", r["name"]) for r in catalog["maps"]]),
              "\n## Expression patterns\n",
-             "Indices are local to the actor model and facial field. A mouth reference cannot be applied to eyes. Use `set_expression.changes.eyes`, `.eyebrow` or `.mouth`. The first mesh's exact closed/open morph targets are shown; the live entry includes all mesh targets. Visual strength also depends on `eyesOpen`, native mouth opening and blinking. Mouth opening is read-only (`expression.mouthOpen`); it cannot be set through the API. Unknown custom morph combinations are labeled explicitly rather than assigned a guessed default-model expression.\n"]
+             "Indices are local to the actor model and facial field. A mouth reference cannot be applied to eyes. Use `set_expression.changes.eyes`, `.eyebrow` or `.mouth`. The first mesh's exact closed/open morph targets are shown; the live entry includes all mesh targets. Opening limits, fixation and blinking affect visible results. Unknown custom morph combinations remain unlabeled. See [expression controls and semantic presets](../API.md#expressions) for ranges and limitations.\n"]
     for field in ("eyes", "eyebrow", "mouth"):
         rows = []
         for r in catalog["expressions"][field]:
             source = r["morphTargets"][0] if r["morphTargets"] else {}
             rows.append((r["id"], "`" + r["key"] + "`", r["name"], "`" + str(source.get("closed")) + "`", "`" + str(source.get("open")) + "`"))
         parts.extend(["\n### " + field + "\n", table(["ID", "Key", "English meaning", "Closed target", "Open target"], rows)])
-    parts.extend(["\n### Continuous controls\n",
-                  "| Key | Type | Meaning |\n| --- | --- | --- |\n| eyesOpen | number 0-1 | Eyelid opening limit; 0 closed, 1 fully open |\n| blink | boolean | Enable automatic native blinking |\n",
+    parts.extend(["\n### Expression controls\n",
+                  table(["Key", "Type / range", "Meaning"], [(r["key"], r["type"] + (" " + str(r["min"]) + "-" + str(r["max"]) if "min" in r else ""), r["description"]) for r in catalog["expressions"]["controls"]]),
+                  "\n### Native gaze modes\n\nPass a returned mode, its key or ID in `set_expression.changes.gaze`. Modes require the current native controller; arbitrary angles/targets are not exposed. CONTROL modes are unavailable.\n",
+                  table(["ID", "Key", "Native type", "Available", "Meaning"], [(r["id"], r["key"], r["nativeType"], r["available"], r["description"]) for r in catalog["expressions"]["gaze"]]),
+                  "\n### Semantic presets\n\nUse `set_expression.changes.preset`. Pattern IDs resolve from live morph labels; missing/ambiguous morphs or unavailable controls reject the preset. Check live availability.\n",
+                  table(["Key", "Meaning"], [(r["key"], r["name"]) for r in catalog["expressions"]["presets"]]),
                   "\n## Animator states\n",
                   "Use `play_animation.state`. The signed ID is `Animator.StringToHash(key)` on layer 0, not a scheduler action ID. Animation playback does not perform gameplay tasks, props or navigation. The runtime confirms each listed state exists; the discovery list is not a complete Studio animation library. These examples use the roaming model. Native talk uses another Animator; refresh `animation_catalog` after entering or leaving a conversation and check each entry's `context`. `animation.state` and hashes report actual playback.\n",
                   table(["Signed state hash", "State key", "English meaning"],

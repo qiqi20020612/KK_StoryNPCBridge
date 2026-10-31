@@ -148,6 +148,7 @@ def shell(client):
     print("actions | action ID [map] [seconds] | queue ID [map] [seconds] | desire ID 0..100")
     print("summon (walk to player) | native_talk | say_native text | clear_queue")
     print("native_events | native_event KEY_OR_ID | waiting on/off")
+    print("sequence FILE | sequence_status | sequence_cancel (ready native_talk required)")
     print("dialogue text | invite [text] | reply text | respond text | dialogue_status | dialogue_retry | dialogue_close")
     target = None
     generation = None
@@ -189,6 +190,8 @@ def shell(client):
                 show(client.request("stat_catalog"))
             elif command == "native_events":
                 show(client.request("native_event_catalog"))
+            elif command == "sequence_status":
+                show(client.request("adv_sequence_status", target=target or "bridge:main"))
             elif command in {"respond", "model"}:
                 actor = client.request("status")["actors"][0]
                 conversation = actor["dialogue"]
@@ -200,6 +203,14 @@ def shell(client):
             elif command == "native_event":
                 reference = int(args[0]) if args[0].isdigit() else args[0]
                 show(client.request("trigger_native_event", target=target, generation=generation, event=reference))
+            elif command == "sequence":
+                segments = json.loads(Path(args[0]).read_text(encoding="utf-8-sig"))
+                show(client.request("play_adv_sequence", target=target, generation=generation, segments=segments))
+            elif command == "sequence_cancel":
+                run = client.request("adv_sequence_status", target=target)
+                if run is None:
+                    raise ValueError("No ADV sequence exists")
+                show(client.request("cancel_adv_sequence", target=target, generation=generation, sequenceId=run["sequenceId"]))
             elif command == "waiting":
                 if args[0] not in {"on", "off"}:
                     raise ValueError("Use waiting on or waiting off")

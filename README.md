@@ -32,6 +32,8 @@ These targeting modes are planned features, not capabilities of the current vers
 - Independently sample another native girl's current task as an anonymous behavior reference, with reusable action requests.
 - Walk to the player using native navigation, including cross-map routes.
 - Use native ADV dialogue with user input, external-response waiting, NPC-initiated invitations and long replies paginated at the equivalent of 60 Chinese characters or 100 ASCII characters per page.
+- Play ordered text/narration, expressions, loaded motions and delays in the bridge's ready native conversation through `play_adv_sequence`, with progress, cancellation and recovery.
+- Control native blush, tear levels, gaze, highlights and facial opening limits, with live semantic presets such as `smile`, `shy` and `crying` resolved from the current model's morphs.
 - Report native dialogue choices and distinguish touch from look while preserving original body reactions.
 - Record displayed native ADV lines involving the bridge NPC, with speaker identities and conversation participants; unrelated conversations and voice-only reactions are excluded.
 - Let the player open text input from a native conversation; external connectors explicitly show/hide a waiting indicator without injecting dialogue.
@@ -145,7 +147,7 @@ The output is `artifacts/build/KK_StoryNPCBridge.dll`, targeting .NET Framework 
 To create the release DLL, installation ZIP and SHA-256 checksums:
 
 ```powershell
-pwsh -File tools/package-release.ps1 -Tag v1.3.0
+pwsh -File tools/package-release.ps1 -Tag v1.4.0
 ```
 
 GitHub Actions builds pushes and pull requests. Pushing a `v<version>` tag builds and publishes a release after checking that the tag matches the DLL version.

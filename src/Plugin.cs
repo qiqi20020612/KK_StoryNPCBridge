@@ -19,7 +19,7 @@ namespace KK_StoryNPCBridge
     [BepInProcess("Koikatsu Party.exe")]
     public sealed partial class Plugin : BaseUnityPlugin
     {
-        public const string Version = "1.3.0";
+        public const string Version = "1.4.0";
         public const string PluginGuid = "KK_StoryNPCBridge";
         public const string PluginName = "KK_StoryNPCBridge";
         public const int Protocol = 2;
@@ -59,7 +59,7 @@ namespace KK_StoryNPCBridge
                 harmony = new Harmony(PluginGuid);
                 harmony.Patch(AccessTools.Method(typeof(TextController), "Set", new Type[] { typeof(string), typeof(string) }, null), null,
                     new HarmonyMethod(typeof(Plugin).GetMethod("TextSetPostfix", BindingFlags.Static | BindingFlags.NonPublic)), null, null, null);
-                InstallNativeHooks(); InstallDialogueHooks(); InstallAdvInputHooks(); InstallNativeCommandHooks(); InstallTimeHooks(); InitializeControlRecovery(); InstallAdvRecordHooks(); InstallNativeEventHooks();
+                InstallNativeHooks(); InstallDialogueHooks(); InstallAdvInputHooks(); InstallNativeCommandHooks(); InstallTimeHooks(); InitializeControlRecovery(); InstallAdvRecordHooks(); InstallNativeEventHooks(); InstallAdvSequenceHooks(); InstallExpressionHooks();
                 Logger.LogInfo(PluginName + " " + Version + " dedicated actor " + ActorId + "; 127.0.0.1:" + port + "; " + panelShortcut);
             }
             catch (Exception e) { Logger.LogError(e); if (server != null) server.Dispose(); server = null; }
@@ -190,13 +190,15 @@ namespace KK_StoryNPCBridge
             catch (NullReferenceException) { return false; }
         }
         static Dictionary<string, object> ReadFace(ChaControl c)
-        { return Json.Map("eyes", c.GetEyesPtn(), "eyebrow", c.GetEyebrowPtn(), "mouth", c.GetMouthPtn(), "eyesOpen", c.GetEyesOpenMax(), "mouthOpen", c.GetMouthOpenMax(), "blink", c.GetEyesBlinkFlag()); }
-        static void ApplyFace(ChaControl c, Dictionary<string, object> face)
+        { return Json.Map("eyes", c.GetEyesPtn(), "eyebrow", c.GetEyebrowPtn(), "mouth", c.GetMouthPtn(), "eyesOpen", c.GetEyesOpenMax(), "mouthOpen", c.GetMouthOpenMax(), "blink", c.GetEyesBlinkFlag(),
+            "eyebrowOpen", c.GetEyebrowOpenMax(), "mouthFixed", c.GetMouthFixed(), "blush", c.fileStatus.hohoAkaRate, "tears", c.tearsLv, "highlight", !c.fileStatus.hideEyesHighlight, "gaze", c.GetLookEyesPtn()); }
+        static void ApplyFaceValues(ChaControl c, Dictionary<string, object> face)
         {
             c.enableExpression = false;
             c.ChangeEyesPtn(Convert.ToInt32(face["eyes"]), true); c.ChangeEyebrowPtn(Convert.ToInt32(face["eyebrow"]), true); c.ChangeMouthPtn(Convert.ToInt32(face["mouth"]), true);
             c.ChangeEyesOpenMax(Convert.ToSingle(face["eyesOpen"]));
             c.ChangeEyesBlinkFlag((bool)face["blink"]); c.ChangeEyesShaking(false);
+            foreach (string key in ExtraFaceFields) { object value; if (face.TryGetValue(key, out value)) WriteExtraFace(c, key, value); }
         }
     }
 }

@@ -32,6 +32,8 @@
 - 每次独立随机抽取其他原生女孩的当前任务作为匿名行为参考，并提供可复用行动请求。
 - 使用原生导航走到玩家附近，支持跨地图路线。
 - 使用游戏原生 ADV 对话，支持文字输入、等待外部响应、NPC 主动邀聊，长回复按每页最多 60 个汉字或 100 个 ASCII 字符的等价额度分页。
+- 使用 `play_adv_sequence` 在桥接角色已就绪的原生聊天中连续播放台词／旁白、表情、已加载动作及延迟，并提供进度、取消和恢复。
+- 控制原生脸红、泪水等级、视线、高光及面部开合，并按当前模型形变动态解析 `smile`、`shy`、`crying` 等语义预设。
 - 上报原生对话选项，区分触碰与注视，并保留原有部位交互反应。
 - 记录涉及桥接角色且实际显示的原生 ADV 台词，包含说话者身份和会话参与者；排除无关会话和纯语音反应。
 - 在原生对话中通过按钮主动输入文字；外部连接器可显式显示／关闭等待提示，无需插入台词。
@@ -145,7 +147,7 @@ dotnet build KK_StoryNPCBridge.csproj --no-restore --configuration Release --out
 生成发布 DLL、安装 ZIP 和 SHA-256 校验文件：
 
 ```powershell
-pwsh -File tools/package-release.ps1 -Tag v1.3.0
+pwsh -File tools/package-release.ps1 -Tag v1.4.0
 ```
 
 GitHub Actions 会在代码推送和拉取请求时构建。推送 `v<版本号>` 标签后，会在核对标签与 DLL 版本一致后构建并发布 Release。

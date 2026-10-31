@@ -176,7 +176,7 @@
 
 ## 表情模式
 
-索引仅适用于当前角色模型及对应面部字段。嘴部引用不能用于眼睛。请使用 `set_expression.changes.eyes`、`.eyebrow` 或 `.mouth`。下表展示第一个网格准确的闭合／张开形变目标；实时目录项包含所有网格的目标。视觉强度还取决于 `eyesOpen`、原生嘴部张开度及眨眼。嘴部张开度仅供只读上报（`expression.mouthOpen`），不能通过接口设置。未知的自定义形变组合会被明确标注，不会被猜测为默认模型的某种表情。
+索引仅适用于当前角色模型及对应面部字段。嘴部引用不能用于眼睛。请使用 `set_expression.changes.eyes`、`.eyebrow` 或 `.mouth`。下表展示第一个网格准确的闭合／张开形变目标；实时目录项包含所有网格的目标。视觉强度还受开合上限、嘴部固定及眨眼影响。参数范围和限制见[表情控制与语义预设](../API.zh-CN.md#表情)。未知的自定义形变组合会被明确标注，不会被猜测为默认模型的某种表情。
 
 
 ### 眼睛（eyes）
@@ -282,13 +282,47 @@
 | 41 | `mouth/41` | 咀嚼嘴形 | `kuti_face.f00_mogu_cl` | `kuti_face.f00_mogu_op` |
 | 42 | `mouth/42` | 不满闭嘴 | `kuti_face.f00_human_cl` | `kuti_face.f00_human_cl` |
 
-### 连续值与布尔值控制
+### 表情控制参数
 
-| Key | 类型 | 含义 |
+| Key | 类型／范围 | 含义 |
 | --- | --- | --- |
-| eyesOpen | 数值 0-1 | 眼睑张开上限；0 为闭合，1 为完全张开 |
+| eyesOpen | 数值 0-1 | 眼睑张开上限；眨眼独立控制 |
 | blink | 布尔值 | 启用原生自动眨眼 |
+| eyebrowOpen | 数值 0-1 | 眉毛开合上限；实际效果取决于形变及眨眼 |
+| mouthOpen | 数值 0-1 | 嘴部张开上限；不自动固定嘴巴 |
+| mouthFixed | 布尔值 | 固定在 mouthOpen；false 恢复原生运动与口型同步 |
+| blush | 数值 0-1 | 原生脸红强度；遵守游戏脸红设置 |
+| highlight | 布尔值 | 显示／隐藏原生眼睛高光 |
+| tears | 整数 0-3 | 无、轻、中、重三级原生泪水网格；不是连续量 |
+| gaze | 引用 | 当前原生视线目录中的模式；不提供任意角度和坐标 |
 
+### 原生视线模式
+
+在 `set_expression.changes.gaze` 中传入返回条目、key 或 ID。模式属于当前控制器；不提供任意角度／目标。CONTROL 模式不可用。
+
+| ID | Key | 原生类型 | 可用 | 含义 |
+| --- | --- | --- | --- | --- |
+| 0 | gaze/0 | FORWARD | True | 相对头部向前看 |
+| 1 | gaze/1 | TARGET | True | 看向当前原生眼神目标，不选择新目标 |
+| 2 | gaze/2 | CONTROL | False | 需要原生固定角度数据 |
+| 3 | gaze/3 | AWAY | True | 从当前原生目标移开视线 |
+| 4 | gaze/4 | FORWARD | True | 相对头部向前看 |
+| 5 | gaze/5 | TARGET | True | 看向当前原生眼神目标，不选择新目标 |
+| 6 | gaze/6 | CONTROL | False | 需要原生固定角度数据 |
+| 7 | gaze/7 | AWAY | True | 从当前原生目标移开视线 |
+
+### 语义表情预设
+
+使用 `set_expression.changes.preset`。模式 ID 按实时形变标签解析；缺失／含糊的形变或不可用参数会拒绝预设。需检查实时可用性。
+
+| Key | 含义 |
+| --- | --- |
+| neutral | 普通表情 |
+| smile | 笑容 |
+| shy | 害羞 |
+| crying | 哭泣 |
+| angry | 生气 |
+| surprised | 惊讶 |
 
 ## Animator 状态
 

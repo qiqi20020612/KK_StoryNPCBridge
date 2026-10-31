@@ -62,7 +62,13 @@ namespace KK_StoryNPCBridge
         object ResolveAdvSpeaker(ADV.TextScenario scenario, List<SaveData.CharaData> people, string raw, string name, string text)
         {
             SaveData.CharaData person = null; string source = "unresolved";
-            if (advLineActive && displayPages.Contains(text) && (queuedAdvSpeaker == "player" || queuedAdvSpeaker == "npc"))
+            if (AdvSequenceBusy && advSequence.Scenario == scenario && advSequence.Segment > 0 && displayPages.Contains(text))
+            {
+                string role = advSequence.Segments[advSequence.Segment - 1].Speaker;
+                if (role == "narrator") return Json.Map("id", null, "role", "narrator", "name", "", "identitySource", "bridge_sequence", "candidates", new object[0]);
+                person = role == "player" ? (SaveData.CharaData)ownedSave.player : ownedHeroine; source = "bridge_sequence";
+            }
+            else if (advLineActive && displayPages.Contains(text) && (queuedAdvSpeaker == "player" || queuedAdvSpeaker == "npc"))
             { person = queuedAdvSpeaker == "player" ? (SaveData.CharaData)ownedSave.player : ownedHeroine; source = "bridge_transfer"; }
             else if (raw.IndexOf("[P", StringComparison.Ordinal) >= 0) { person = scenario.player; source = "native_parameter"; }
             else if (raw.IndexOf("[H", StringComparison.Ordinal) >= 0)

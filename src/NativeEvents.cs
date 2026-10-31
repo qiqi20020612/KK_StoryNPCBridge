@@ -104,8 +104,7 @@ namespace KK_StoryNPCBridge
                 catch (Exception e) { Logger.LogWarning("Native state effect: " + e.Message); FinishNativeEvent("failed", "native_execution_failed"); }
                 return ReadNativeEventRun();
             }
-            SetNativeIdle(); nativeQueue.Clear(); activeTask = null; faceOverride = false; animationOverride = false;
-            if (ownedCha != null) ownedCha.enableExpression = true;
+            SetNativeIdle(); nativeQueue.Clear(); activeTask = null; ClearFaceOverride(); animationOverride = false;
             ClearAdvControls();
             nativeEventRun = new NativeEventRun { Event = id, Result = NativeEventResult(id), Generation = ownedGeneration, World = world, Started = Time.realtimeSinceStartup,
                 State = OwnedTalkActive ? "preparing" : "opening", Talk = OwnedTalkActive ? currentTalk : null, NewHost = !OwnedTalkActive, Before = before };

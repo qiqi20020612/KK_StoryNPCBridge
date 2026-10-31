@@ -263,8 +263,10 @@ namespace KK_StoryNPCBridge
         }
         Dictionary<string, object> NormalizeFace(Dictionary<string, object> changes)
         {
-            var result = new Dictionary<string, object>(changes);
+            object preset; var result = changes.TryGetValue("preset", out preset) ? ResolveExpressionPreset(preset) : new Dictionary<string, object>();
+            foreach (var pair in changes) if (pair.Key != "preset") result[pair.Key] = pair.Value;
             foreach (string field in new string[] { "eyes", "eyebrow", "mouth" }) if (result.ContainsKey(field)) result[field] = ExpressionId(field, result[field]);
+            if (result.ContainsKey("gaze")) result["gaze"] = GazeId(result["gaze"]);
             return result;
         }
         object ReadExpressionCatalog()
@@ -281,15 +283,14 @@ namespace KK_StoryNPCBridge
                 }
                 result[field] = rows;
             }
-            result["controls"] = new object[] {
-                Json.Map("key", "eyesOpen", "name", "Eye opening limit", "type", "number", "min", 0, "max", 1, "description", "Maximum eyelid opening; 0 closed, 1 fully open."),
-                Json.Map("key", "blink", "name", "Automatic blinking", "type", "boolean", "description", "Enable or disable the native blink controller.") };
+            result["controls"] = ReadFaceControls(); result["gaze"] = ReadGazeCatalog(); result["presets"] = ReadExpressionPresets();
             return result;
         }
         object ReadExpressionDetails()
         {
             if (!FaceReady(ownedCha)) return null;
-            return Json.Map("eyes", ExpressionReference("eyes", ownedCha.GetEyesPtn()), "eyebrow", ExpressionReference("eyebrow", ownedCha.GetEyebrowPtn()), "mouth", ExpressionReference("mouth", ownedCha.GetMouthPtn()));
+            return Json.Map("eyes", ExpressionReference("eyes", ownedCha.GetEyesPtn()), "eyebrow", ExpressionReference("eyebrow", ownedCha.GetEyebrowPtn()), "mouth", ExpressionReference("mouth", ownedCha.GetMouthPtn()),
+                "gaze", FaceControlUnavailable("gaze") == null ? GazeReference(ownedCha.GetLookEyesPtn()) : null);
         }
         List<string> AnimationStates()
         {

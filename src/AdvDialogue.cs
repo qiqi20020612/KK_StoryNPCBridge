@@ -39,13 +39,15 @@ namespace KK_StoryNPCBridge
         static void AdvHoldStarted(ADV.Commands.Base.Wait __instance)
         {
             Plugin p = Current;
-            if (p == null || !p.DialogueActive || !p.advLineActive || __instance.args.Length == 0 || __instance.args[0] != DialogueWaitMarker) return;
+            if (p == null || !p.DialogueActive || !p.advLineActive || __instance.args.Length == 0) return;
             if (p.currentTalk == null || !ReferenceEquals(p.currentTalk.targetHeroine, p.ownedHeroine)) return;
+            if (p.TrackAdvSequenceWait(__instance) || __instance.args[0] != DialogueWaitMarker) return;
             p.managedWait = __instance; p.advSawHold = true; p.lastHoldProcess = Time.realtimeSinceStartup;
             if (p.dialoguePhase != "ending" && !p.NativeEventBusy) p.SetDialoguePhase(p.dialogueError != null ? "model_error" : p.heldAfter);
         }
         static bool ProcessAdvHold(ADV.Commands.Base.Wait __instance, ref bool __result)
         {
+            if (Current != null && Current.AdvSequenceWaitPaused(__instance)) { __result = false; return false; }
             if (Current == null || !ReferenceEquals(Current.managedWait, __instance)) return true;
             Current.lastHoldProcess = Time.realtimeSinceStartup;
             __result = Current.releaseAdvHold; return false;
@@ -204,6 +206,12 @@ namespace KK_StoryNPCBridge
             string text = queuedAdvText, speaker = queuedAdvSpeaker;
             heldAfter = queuedAdvAfter; queuedAdvText = null;
             releaseAdvHold = false; advSawHold = false; managedWait = null; advLineActive = true; advLineStartedAt = Time.realtimeSinceStartup;
+            if (AdvSequenceQueued)
+            {
+                try { StartManagedAdvTransfer(BuildAdvSequenceTransfers()); }
+                catch (Exception e) { advLineActive = false; FailAdvSequence(e); throw; }
+                return;
+            }
             SetDialoguePhase(speaker == "npc" && text.Length > 0 ? "npc_speaking" : speaker == "player" ? "user_speaking" : heldAfter == "awaiting_input" ? "opening" : "waiting_model");
             var list = ADV.Program.Transfer.NewList(false, false);
             list.Add(ADV.Program.Transfer.Create(true, ADV.Command.CharaChange, "-2", "true"));
@@ -215,6 +223,10 @@ namespace KK_StoryNPCBridge
             else { list.Add(ADV.Program.Transfer.Create(true, ADV.Command.TextClear)); list.Add(ADV.Program.Transfer.Create(true, ADV.Command.WindowActive, "true", "1")); }
             list.Add(ADV.Program.Transfer.Create(false, ADV.Command.Wait, DialogueWaitMarker));
             list.Add(ADV.Program.Transfer.Close());
+            StartManagedAdvTransfer(list);
+        }
+        void StartManagedAdvTransfer(List<ADV.Program.Transfer> list)
+        {
             AccessTools.Field(typeof(TalkScene), "isUpdateCamera").SetValue(currentTalk, false);
             AccessTools.Method(typeof(TalkScene), "StartADV", new Type[] { list.GetType() }, null).Invoke(currentTalk, new object[] { list });
             StartCoroutine(WaitManagedAdvLine(dialogueId));
@@ -247,6 +259,7 @@ namespace KK_StoryNPCBridge
         }
         void TickAdvDialogue()
         {
+            TickAdvSequenceCleanup();
             if (NativeEventBusy) return;
             if (!DialogueActive) return;
             bool host = currentTalk != null && ReferenceEquals(currentTalk.targetHeroine, ownedHeroine);
@@ -320,6 +333,7 @@ namespace KK_StoryNPCBridge
         void EndAdvDialogue(string reason)
         {
             ClearAdvControls();
+            InterruptAdvSequence(reason, true);
             if (!DialogueActive || dialoguePhase == "ending") return;
             AddEvent("dialogue_ending", Json.Map("conversationId", dialogueId, "reason", reason));
             if (modelRequestId != null) AddEvent("dialogue_request_cancelled", Json.Map("conversationId", dialogueId, "requestId", modelRequestId, "reason", reason));
@@ -335,6 +349,7 @@ namespace KK_StoryNPCBridge
         }
         void ResetAdvDialogue(string reason)
         {
+            ClearAdvSequenceHost(reason);
             ClearAdvControls();
             RestoreNativeMenuRaycasts();
             if (managedWait != null) AccessTools.Field(typeof(ADV.Commands.Base.Wait), "time").SetValue(managedWait, 0f);

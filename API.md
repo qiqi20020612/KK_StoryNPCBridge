@@ -1,4 +1,4 @@
-# KK_StoryNPCBridge API 1.3.0
+# KK_StoryNPCBridge API 1.4.0
 
 English | [简体中文](API.zh-CN.md)
 
@@ -11,7 +11,7 @@ Use UTF-8 newline-delimited JSON over IPv4 TCP loopback. The default port is `64
 {"id":"2","op":"status"}
 ```
 
-Success is `{ "id": "2", "ok": true, "result": ... }`. Errors are `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`. The protocol version is `2`; the plugin version is `1.3.0`.
+Success is `{ "id": "2", "ok": true, "result": ... }`. Errors are `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`. The protocol version is `2`; the plugin version is `1.4.0`.
 
 Authentication and status replies identify the plugin with `pluginName="KK_StoryNPCBridge"` and `pluginGuid="KK_StoryNPCBridge"`. The single DLL installs directly as `BepInEx/plugins/KK_StoryNPCBridge.dll`.
 
@@ -81,19 +81,33 @@ The reference tables are in [docs/REFERENCE.md](docs/REFERENCE.md) ([简体中�
 
 ### Expressions
 
-`expression_catalog` returns arrays for `eyes`, `eyebrow`, `mouth`, plus continuous/boolean `controls`. English pattern names interpret the native morph target labels. `morphTargets` records the actual mesh and open/closed blend-shape names. Unknown custom patterns explicitly identify themselves as unlabeled rather than borrowing another model's expression meaning.
+`expression_catalog` retains the `eyes`, `eyebrow` and `mouth` arrays and adds live `controls`, `gaze` modes and semantic `presets` (also returned by `expression_presets`). English pattern names interpret actual native `morphTargets`; unknown custom patterns remain unlabeled. Controls, gaze entries and presets report `available` and `unavailableReason` for the current visual context.
 
 ```python
-eyes = catalog['expressions']['eyes'][2]  # Smiling eyes on the default model
-bridge.request('set_expression', changes={
-    'eyes': eyes,
-    'eyebrow': catalog['expressions']['eyebrow'][0],
-    'mouth': catalog['expressions']['mouth'][1],
-    'eyesOpen': 1.0, 'blink': False,
-}, **p)
+face = bridge.request('expression_catalog', target=p['target'])
+smile = next(x for x in face['presets'] if x['key'] == 'smile' and x['available'])
+bridge.request('set_expression', changes={'preset': smile, 'blush': 0.4}, **p)
+# Existing pattern references remain accepted; gaze references work the same way.
+gaze = next(x for x in face['gaze'] if x['available'] and x['nativeType'] == 'TARGET')
+bridge.request('set_expression', changes={'gaze': gaze}, **p)
 ```
 
-`eyesOpen` is numeric in `[0,1]`; `blink` is boolean. Mouth opening is controlled by the native game: `expression.mouthOpen` is read-only and is not included in writable `controls`. Sending `mouthOpen` in `set_expression.changes` is rejected with `unsupported_field`; a mixed change containing it is rejected before applying any fields. Previously stored mouth-opening values are ignored. Mouth pattern selection (`mouth`) remains writable. The plugin does not write mouth-opening limits or pin the opening rate when applying expressions. `clear_expression` clears the override and returns expression management to the native game. The live actor includes numeric `expression`, descriptive `expressionDetails` and pattern-count `expressionLimits`.
+| Control | Input / native behavior |
+| --- | --- |
+| `eyesOpen`, `eyebrowOpen` | Number 0–1; opening limits. Visible results depend on the selected morph and blinking |
+| `mouthOpen` | Number 0–1; mouth opening **limit**, without implicitly pinning the mouth |
+| `mouthFixed` | Boolean; true pins the mouth at `mouthOpen`; false restores native mouth movement/lip sync |
+| `blush` | Number 0–1; cheek shader intensity. Disabled game blush settings or missing material support return `unsupported_control`; game settings are unchanged |
+| `tears` | Integer 0–3: none, light, medium, heavy native tear meshes; fractions are rejected |
+| `highlight` | Boolean; show/hide native eye highlights |
+| `blink` | Boolean; native automatic blinking |
+| `gaze` | Live mode object, key or integer ID from `expression_catalog.gaze`; IDs belong to the loaded controller |
+
+Gaze supports native `FORWARD` (relative to the head), `TARGET` (the existing native eye target) and `AWAY` modes. It does not move the head, select a new target, or accept arbitrary coordinates, angles or `"down"`/`"up"` strings. Native `CONTROL` entries require fixed-angle data and are explicitly unavailable. During roaming, the mode is maintained only on the controlled bridge model; other NPCs keep native control.
+
+Presets are `neutral`, `smile`, `shy`, `crying`, `angry` and `surprised`. Pass a semantic key or returned entry in `changes.preset`; explicit fields override resolved values. They combine live eyebrow/eye/mouth morphs with openings, blush, tears, highlights and gaze. `surprised` explicitly fixes the mouth; other presets release it. Entries include resolved reusable `changes`, exact `patterns` and executable `request`. Pattern IDs resolve from live morph labels, never fixed numbers. Missing/ambiguous required morphs or unavailable controls make a preset unavailable; calling it returns `preset_unavailable` before any changes. Direct dynamic pattern selection remains available.
+
+`set_expression` retains existing pattern references and returns actual native `expression`, descriptive `expressionDetails` (including gaze) and pattern-count `expressionLimits`. The whole batch validates first. Omitted extra fields preserve prior overrides or native values. Overrides are saved in the story profile. `clear_expression` removes overrides, restores captured pre-override extra values on the model and returns expression management to the game. Release, native activity takeover and model changes also restore these values, including mouth fixation. Missing shaders/controllers/tear meshes and unsupported contexts are reported unavailable, with no simulated fallback.
 
 ### Native tasks and maps
 
@@ -271,6 +285,7 @@ Unless stated otherwise, actor commands take `target`; write commands also take 
 | `sample_native_action` | Independently sample another native girl's current task, anonymously; no target/generation/ownership needed |
 | `map_catalog` | Story and event map references; no target needed |
 | `expression_catalog` | Actor-specific facial pattern directory and controls |
+| `expression_presets` | Semantic presets, availability, resolved changes and executable requests; target required |
 | `animation_catalog` | Discovered playable Animator states |
 | `stat_catalog` / `time_catalog` | Native attribute/relationship definitions / stage, period and weekday references |
 | `native_event_catalog` | Direct native activity effects, availability and executable references; no target needed |
@@ -297,6 +312,9 @@ Unless stated otherwise, actor commands take `target`; write commands also take 
 | `trigger_native_event` | `event` object/key/ID; execute a native activity effect directly; returns execution state, actual stats and follow binding |
 | `set_waiting_indicator` | Boolean `visible`; show/hide the essential ADV waiting notice; no conversation/request ID needed |
 | `say_native` | `text`; paginated native ADV reply outside a managed conversation; up to 1000 UTF-16 units |
+| `play_adv_sequence` | Ordered `segments`; play native text/narration, expression and motion commands in the bridge's ready TalkScene |
+| `adv_sequence_status` | Latest sequence report, also `actor.advSequence`; target required, no ownership/generation required |
+| `cancel_adv_sequence` | Current `sequenceId`; cancel remaining fragments and end the conversation through shared cleanup |
 | `dialogue_open` | Optional `text`, `initiator='player'/'npc'`, `requestInput`, `timeoutSeconds`, `afterInteractionId` |
 | `say` | `text`, optional `requestInput`, `afterInteractionId`; start/continue managed dialogue |
 | `dialogue_status` | Full conversation state, request IDs and displayed history |
@@ -363,7 +381,7 @@ Speaker roles are `bridge`, `player`, `npc`, `narrator` or `unknown`. IDs are `b
 
 ### Managed dialogue workflow
 
-`phase` includes `closed`, `inviting`, `opening`, `npc_speaking`, `user_speaking`, `awaiting_input`, `waiting_reply`, `reply_error`, `ready`, `native_reaction`, `native_event` and `ending`. `native_event` marks the transition from a managed conversation into an activity. `waitingReply`, `mouseBlocked`, `requestId`, `requestKind`, `conversationId`, `turn` and `errorCode` explain the current response workflow. The response also exposes `state=waiting_model/model_error` names; new clients can use `phase` for the response state.
+`phase` includes `closed`, `inviting`, `opening`, `npc_speaking`, `user_speaking`, `awaiting_input`, `waiting_reply`, `reply_error`, `ready`, `native_reaction`, `native_event`, `sequence_playing`, `sequence_finishing` and `ending`. `native_event` marks the transition from a managed conversation into an activity; the `sequence_*` phases identify an ordered ADV performance. `waitingReply`, `mouseBlocked`, `requestId`, `requestKind`, `conversationId`, `turn` and `errorCode` explain the current response workflow. The response also exposes `state=waiting_model/model_error` names; new clients can use `phase` for the response state.
 
 `dialogue_request` contains identifiers, kind and the native menu command or user input. Native button choices have `userText=null`; the bridge does not invent a player utterance or package a prompt/history for the external application. Native menu labels remain source content. `commandId`, `category` and optional `eventId` retain native numbering; known invitation examples are `eventId=8` for studying and `eventId=11` for following. These are observed UI intents, not scheduler action IDs.
 
@@ -376,6 +394,45 @@ Supplied replies are displayed through native ADV with a page budget equivalent 
 Unity 5's native typewriter cannot safely measure supplementary Unicode characters (for example Emoji). Only native presentation substitutes each such character with `□`; API history and original page text are preserved. `nonBmpFallbacks` reports the number of substitutions in the reply. Invalid unpaired UTF-16 surrogates are rejected before displaying text.
 
 Other events include controller claims/releases, task queued/started/arrived/completed/failed/cancelled, dialogue cancellation and native invitation acceptance/cancellation. Events and snapshots contain sequence numbers. After reconnecting, refresh generation and request identifiers; never replay stale write commands blindly.
+
+## Ordered ADV sequences
+
+`play_adv_sequence` is an independent native performance operation. This first implementation requires the bridge NPC's existing, ready **TalkScene**: claim control, use `native_talk` or enter her native conversation, finish the introduction and refresh its visual catalogs. Roaming, another NPC's conversation, scene transitions and native activity flows are rejected. It does not execute arbitrary ADV commands or load animation bundles.
+
+Submit `segments` containing 1–32 objects. The whole request is validated before changing the conversation or visuals. Each segment can combine the following fields; native commands apply expression, then motion, then text, then the optional delay:
+
+| Field | Input / behavior |
+| --- | --- |
+| `text` | Optional text, up to 4000 UTF-16 units per segment and 8000 across the sequence; uses the existing 60-CJK/100-ASCII pagination and Unicode display fallback |
+| `speaker` | `npc` (default), `player` or `narrator`; narration has no displayed speaker name. Supplied player lines are scripted text, without an input/model request |
+| `expression` | The same `set_expression.changes` object, including `preset` and extra controls; native CharaExpression and optional CharaFixMouth preserve omitted fields |
+| `motion` | A current TalkScene animation object, key or state hash from `animation_catalog`; uses the loaded Animator, without changing its controller/assets |
+| `waitSeconds` | Optional number 0–30, after text has been advanced; native delay also works in a visual-only segment |
+
+A segment needs text, a nonempty expression, motion or a positive delay. Unknown fields, invalid references and invalid later segments reject the entire request. Native text advances normally by clicking or native auto mode. One sequence runs at a time; new sequences and direct visual writes return `adv_sequence_busy` while it runs. Pending dialogue replies, native reactions and an active external waiting indicator return `dialogue_busy`.
+
+```python
+# p identifies an already claimed actor in her ready native conversation.
+motion = bridge.request('animation_catalog', target=p['target'])[0]
+run = bridge.request('play_adv_sequence', segments=[
+    {'text': 'I have something to tell you.', 'expression': {'eyes': 1},
+     'motion': motion},
+    {'speaker': 'narrator', 'text': 'She pauses for a moment.'},
+    {'expression': {'mouth': 1}, 'waitSeconds': 0.5},
+    {'text': 'Shall we continue?'},
+], **p)
+status = bridge.request('adv_sequence_status', target=p['target'])
+# To cancel this run explicitly:
+bridge.request('cancel_adv_sequence', sequenceId=run['sequenceId'], **p)
+```
+
+Reports include `sequenceId`, `state`, source `generation`/`world`, `conversationId`, one-based `segment` (0 before starting), `segmentCount`, observed `page`, `pageCount`, normalized reusable `segments`, `reason`, native `error`, timestamps and terminal `actual` expression/animation-hash readback. States are `queued`, `running`, `finishing`, `completed`, `cancelled`, `failed`, or `paused_reconnect` during recovery. The latest terminal report is retained; it describes that run, not current live visuals. Refresh animation references after changing visual context.
+
+Lifecycle events are `adv_sequence_requested`, `adv_sequence_started`, `adv_sequence_segment_started` and exactly one terminal event: `adv_sequence_completed`, `adv_sequence_cancelled` or `adv_sequence_failed`. `dialogue_page` adds `sequenceId` and `segment`; original lines enter managed history once, with roles `assistant`, `user` or `narrator`. Supplied player/narrator lines emit `adv_sequence_text`; NPC speech uses `npc_dialogue`. Actual displayed lines still use the existing `game_dialogue` records with correct speaker/participant identities.
+
+If no managed dialogue exists, the sequence temporarily reuses its lifecycle and detaches after native Close, leaving TalkScene and its menu available for `say_native`. In an idle managed dialogue (`ready`/`awaiting_input`), completion restores that state and keeps its history/draft input. It creates no external-reply request. Sequence visuals are transient; saved/manual visual overrides resume afterward. `say`, `say_native` and ordinary events retain their existing behavior outside a running sequence.
+
+Cancellation, native execution errors, release and host/world changes discard remaining fragments and use existing conversation cleanup; explicit cancellation ends the conversation. A stale sequence ID is rejected; cancelling an already terminal current ID returns its report without a new event. Unexpected disconnects use the existing reservation/token-based `resume`: native markers/delays and text progression pause, then continue without replay. Grace expiry cancels the sequence and releases native control. Native scene changes clean up the captured host without advancing another script. The manual shell provides `sequence FILE` (a UTF-8 JSON segment array), `sequence_status` and `sequence_cancel`.
 
 ## Direct native activity effects
 

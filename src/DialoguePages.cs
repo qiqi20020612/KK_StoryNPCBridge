@@ -30,8 +30,10 @@ namespace KK_StoryNPCBridge
             if (page.Length > 0) yield return page.ToString();
         }
         List<string> BeginAdvPages(string text)
+        { return BeginAdvPages(AdvPages(text)); }
+        List<string> BeginAdvPages(IEnumerable<string> pages)
         {
-            presentedPages.Clear(); presentedPages.AddRange(AdvPages(text)); presentedPageIndex = 0;
+            presentedPages.Clear(); presentedPages.AddRange(pages); presentedPageIndex = 0;
             displayPages.Clear(); nonBmpFallbacks = 0;
             foreach (string page in presentedPages)
             {
@@ -52,10 +54,11 @@ namespace KK_StoryNPCBridge
             if (!OwnedTalkActive || presentedPageIndex >= displayPages.Count || displayPages[presentedPageIndex] != text) return;
             string original = presentedPages[presentedPageIndex];
             presentedPageIndex++;
-            AddEvent("dialogue_page", Json.Map("conversationId", DialogueActive ? dialogueId : null, "turn", dialogueTurn,
+            var data = Json.Map("conversationId", DialogueActive ? dialogueId : null, "turn", dialogueTurn,
                 "page", presentedPageIndex, "pageCount", presentedPages.Count, "text", original, "displayText", text,
                 "maxCharacters", AdvPageWidthUnits / AdvAsciiWidthUnits, "maxCjkCharacters", AdvPageWidthUnits / AdvNonAsciiWidthUnits,
-                "maxWidthUnits", AdvPageWidthUnits, "countUnit", "weighted_text_element", "asciiWidthUnits", AdvAsciiWidthUnits, "nonAsciiWidthUnits", AdvNonAsciiWidthUnits));
+                "maxWidthUnits", AdvPageWidthUnits, "countUnit", "weighted_text_element", "asciiWidthUnits", AdvAsciiWidthUnits, "nonAsciiWidthUnits", AdvNonAsciiWidthUnits);
+            TrackAdvSequencePage(data); AddEvent("dialogue_page", data);
         }
         object ReadAdvPagination()
         { return Json.Map("page", presentedPageIndex, "pageCount", presentedPages.Count,

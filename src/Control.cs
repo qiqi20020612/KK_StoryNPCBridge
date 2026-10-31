@@ -41,9 +41,13 @@ namespace KK_StoryNPCBridge
         {
             foreach (var p in changes)
             {
-                if (!ownedFace.ContainsKey(p.Key)) throw new BridgeException("unsupported_field", p.Key);
-                if (p.Key == "blink") Boolean(p.Value, p.Key);
-                else if (p.Key == "eyesOpen") Number(p.Value, 0, 1, p.Key);
+                if (!IsFaceField(p.Key)) throw new BridgeException("unsupported_field", p.Key);
+                string unavailable = FaceControlUnavailable(p.Key);
+                if (unavailable != null) throw new BridgeException("unsupported_control", p.Key + ": " + unavailable);
+                if (p.Key == "blink" || p.Key == "mouthFixed" || p.Key == "highlight") Boolean(p.Value, p.Key);
+                else if (p.Key == "eyesOpen" || p.Key == "eyebrowOpen" || p.Key == "mouthOpen" || p.Key == "blush") Number(p.Value, 0, 1, p.Key);
+                else if (p.Key == "gaze") GazeId(p.Value);
+                else if (p.Key == "tears") { double n = Number(p.Value, 0, 3, p.Key); if (n != Math.Floor(n)) throw new BridgeException("invalid_argument", "tears must be an integer level 0..3"); }
                 else
                 {
                     int count = p.Key == "eyes" ? ownedCha.eyesCtrl.GetMaxPtn() : p.Key == "eyebrow" ? ownedCha.eyebrowCtrl.GetMaxPtn() : ownedCha.mouthCtrl.GetMaxPtn();
@@ -82,9 +86,11 @@ namespace KK_StoryNPCBridge
             if (op == "native_interaction_status") return ReadNativeInteraction();
             if (op == "activity_report") return ReadActivityReport(d);
             if (op == "dialogue_status") return ReadDialogue();
+            if (op == "adv_sequence_status") return ReadAdvSequence();
             if (op == "native_actions") return ReadNativeActions();
             if (op == "native_plan") return ReadNativePlanning();
             if (op == "expression_catalog") return ReadExpressionCatalog();
+            if (op == "expression_presets") return ReadExpressionPresets();
             if (op == "animation_catalog") return ReadAnimationCatalog();
             if (op == "spawn" || op == "despawn" || op == "respawn") throw new BridgeException("native_lifecycle", "Native NPC lifecycle is managed by story loading; reload the story to recreate her");
             object generation;
@@ -99,6 +105,7 @@ namespace KK_StoryNPCBridge
             }
             if (op == "set_stats") { RequireOwner(session); return SetOwnedStats(Object(d, "changes")); }
             if (op == "adjust_stats") { RequireOwner(session); return AdjustOwnedStats(Text(d, "mutationId"), Object(d, "deltas")); }
+            if (op == "cancel_adv_sequence") { RequireOwner(session); return CancelAdvSequence(d); }
             if (op == "set_waiting_indicator") { RequireOwner(session); return SetWaitingIndicator(Boolean(d.ContainsKey("visible") ? d["visible"] : null, "visible")); }
             if (op == "trigger_native_event") { RequireOwner(session); if (Recovering) throw new BridgeException("controller_disconnected", "Resume control first"); return TriggerNativeEvent(d); }
             if (op == "release")
@@ -110,10 +117,12 @@ namespace KK_StoryNPCBridge
             if (NativeEventBusy) throw new BridgeException("native_event_busy", "Wait for the current native activity to finish");
             bool dialogueCommand = op.StartsWith("dialogue_", StringComparison.Ordinal) || op == "model_reply" || op == "model_error" || op == "say";
             bool visualCommand = op == "set_expression" || op == "clear_expression" || op == "play_animation";
-            bool talkCommand = op == "claim" || op == "say_native" || dialogueCommand || visualCommand;
+            bool talkCommand = op == "claim" || op == "say_native" || op == "play_adv_sequence" || dialogueCommand || visualCommand;
             if (ownedNpc == null || ownedNpc.AI == null || SceneBusy && !(DialogueActive && dialogueCommand) || Mode != "roaming" && !(talkCommand && Mode == "talk")) throw new BridgeException("not_ready", "This command requires story roaming or the target's native conversation");
             if (op == "dialogue_reply") { if (Recovering) throw new BridgeException("controller_disconnected", "Wait for controller recovery"); return SubmitAdvInput(d); }
             RequireOwner(session);
+            if (visualCommand && AdvSequenceBusy) throw new BridgeException("adv_sequence_busy", "Wait for or cancel the ADV sequence before changing visuals");
+            if (op == "play_adv_sequence") return PlayAdvSequence(d);
             if (op == "model_reply" || op == "model_error" || op == "dialogue_respond" || op == "dialogue_fail") return ReceiveExternalReply(d, op == "model_error" || op == "dialogue_fail");
             if (op == "say_native") { if (DialogueActive) throw new BridgeException("managed_dialogue", "Use model_reply or say in an active ADV conversation"); return SayNative(Text(d, "text")); }
             if (op == "dialogue_close" || op == "dialogue_retry" || op == "dialogue_request_input" || op == "dialogue_wait_model" || op == "dialogue_wait") return DialogueControl(op, d);
@@ -128,14 +137,7 @@ namespace KK_StoryNPCBridge
             }
             if (op == "set_action" || op == "queue_action" || op == "set_desire" || op == "clear_queue" || op == "native_talk" || op == "summon" || op == "walk_to_player") return ExecuteNativeCommand(op, d);
             if (visualCommand) RequireVisualActor(); else RequireActor();
-            if (op == "set_expression" || op == "clear_expression")
-            {
-                var changes = op == "clear_expression" ? NeutralFace() : NormalizeFace(Object(d, "changes")); ValidateFace(changes);
-                var before = ownedFace; ownedFace = new Dictionary<string, object>(before);
-                foreach (var p in changes) ownedFace[p.Key] = p.Value;
-                try { SaveOwnedProfile(); faceOverride = op != "clear_expression"; if (faceOverride) ApplyFace(ownedCha, ownedFace); else ownedCha.enableExpression = true; } catch { ownedFace = before; throw; }
-                return ReadOwnedActor();
-            }
+            if (op == "set_expression" || op == "clear_expression") return SetOwnedExpression(d, op == "clear_expression");
             if (op == "turn")
             {
                 object yaw; if (!d.TryGetValue("yaw", out yaw)) throw new BridgeException("invalid_argument", "yaw required");

@@ -119,6 +119,7 @@ namespace KK_StoryNPCBridge
             actor.Add("nativePlanning", ReadNativePlanning());
             actor.Add("approach", ReadApproach());
             actor.Add("dialogue", ReadDialogue());
+            actor.Add("advSequence", ReadAdvSequence());
             actor.Add("nativeInteraction", ReadNativeInteraction());
             actor.Add("nativeConversation", lastAdvConversation);
             actor.Add("nativeEvent", ReadNativeEventRun());
@@ -170,8 +171,7 @@ namespace KK_StoryNPCBridge
             ClearControlRecovery(); ClearAdvControls(); FinishApproach("cancelled", reason);
             if (DialogueActive) EndAdvDialogue(reason);
             if (activeTask != null) AddEvent("native_action_cancelled", activeTask.Read());
-            activeTask = null; nativeQueue.Clear(); ownedMoving = false; faceOverride = false; animationOverride = false;
-            if (ownedCha != null) ownedCha.enableExpression = true;
+            activeTask = null; nativeQueue.Clear(); ownedMoving = false; ClearFaceOverride(); animationOverride = false;
             if (restorePosition && ownedReady && ownedAgent != null && ownedAgent.enabled && ownedAgent.isOnNavMesh)
             { ownedAgent.Warp(claimedPosition); ownedNpc.position = claimedPosition; ownedRoot.transform.rotation = Quaternion.Euler(0, claimedYaw, 0); }
             ownedController = null;

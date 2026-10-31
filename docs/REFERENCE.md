@@ -176,7 +176,7 @@ Use a map reference in task `map`. `automatic` (-1) asks the scheduler to choose
 
 ## Expression patterns
 
-Indices are local to the actor model and facial field. A mouth reference cannot be applied to eyes. Use `set_expression.changes.eyes`, `.eyebrow` or `.mouth`. The first mesh's exact closed/open morph targets are shown; the live entry includes all mesh targets. Visual strength also depends on `eyesOpen`, native mouth opening and blinking. Mouth opening is read-only (`expression.mouthOpen`); it cannot be set through the API. Unknown custom morph combinations are labeled explicitly rather than assigned a guessed default-model expression.
+Indices are local to the actor model and facial field. A mouth reference cannot be applied to eyes. Use `set_expression.changes.eyes`, `.eyebrow` or `.mouth`. The first mesh's exact closed/open morph targets are shown; the live entry includes all mesh targets. Opening limits, fixation and blinking affect visible results. Unknown custom morph combinations remain unlabeled. See [expression controls and semantic presets](../API.md#expressions) for ranges and limitations.
 
 
 ### eyes
@@ -282,13 +282,47 @@ Indices are local to the actor model and facial field. A mouth reference cannot 
 | 41 | `mouth/41` | Chewing mouth | `kuti_face.f00_mogu_cl` | `kuti_face.f00_mogu_op` |
 | 42 | `mouth/42` | Dissatisfied closed mouth | `kuti_face.f00_human_cl` | `kuti_face.f00_human_cl` |
 
-### Continuous controls
+### Expression controls
 
-| Key | Type | Meaning |
+| Key | Type / range | Meaning |
 | --- | --- | --- |
-| eyesOpen | number 0-1 | Eyelid opening limit; 0 closed, 1 fully open |
-| blink | boolean | Enable automatic native blinking |
+| eyesOpen | number 0-1 | Maximum eyelid opening; native blinking remains independent. |
+| blink | boolean | Enable the native blink controller. |
+| eyebrowOpen | number 0-1 | Eyebrow opening limit; visible strength depends on the selected morph and blinking. |
+| mouthOpen | number 0-1 | Mouth opening limit, not a fixed opening pose; lip sync stays native unless mouthFixed is true. |
+| mouthFixed | boolean | Pin the mouth to mouthOpen; false restores native mouth motion and lip sync. |
+| blush | number 0-1 | Native cheek blush intensity; respects the game's blush setting. |
+| highlight | boolean | Show or hide native eye highlights; no texture or color replacement. |
+| tears | integer 0-3 | Native tear mesh level: 0 none, 1 light, 2 medium, 3 heavy; not a continuous amount. |
+| gaze | reference | Native gaze mode from the live gaze directory; no arbitrary angles or target coordinates. |
 
+### Native gaze modes
+
+Pass a returned mode, its key or ID in `set_expression.changes.gaze`. Modes require the current native controller; arbitrary angles/targets are not exposed. CONTROL modes are unavailable.
+
+| ID | Key | Native type | Available | Meaning |
+| --- | --- | --- | --- | --- |
+| 0 | gaze/0 | FORWARD | True | Look forward relative to the head. |
+| 1 | gaze/1 | TARGET | True | Look toward the current native eye target; this does not select a new target. |
+| 2 | gaze/2 | CONTROL | False | Requires native fixed-angle data; arbitrary gaze directions are not exposed. |
+| 3 | gaze/3 | AWAY | True | Look away from the current native target. |
+| 4 | gaze/4 | FORWARD | True | Look forward relative to the head. |
+| 5 | gaze/5 | TARGET | True | Look toward the current native eye target; this does not select a new target. |
+| 6 | gaze/6 | CONTROL | False | Requires native fixed-angle data; arbitrary gaze directions are not exposed. |
+| 7 | gaze/7 | AWAY | True | Look away from the current native target. |
+
+### Semantic presets
+
+Use `set_expression.changes.preset`. Pattern IDs resolve from live morph labels; missing/ambiguous morphs or unavailable controls reject the preset. Check live availability.
+
+| Key | Meaning |
+| --- | --- |
+| neutral | Neutral |
+| smile | Smile |
+| shy | Shy |
+| crying | Crying |
+| angry | Angry |
+| surprised | Surprised |
 
 ## Animator states
 

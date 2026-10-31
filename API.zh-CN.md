@@ -1,4 +1,4 @@
-# KK_StoryNPCBridge API 1.3.0
+# KK_StoryNPCBridge API 1.4.0
 
 [English](API.md) | 简体中文
 
@@ -11,7 +11,7 @@
 {"id":"2","op":"status"}
 ```
 
-成功回复格式为 `{ "id": "2", "ok": true, "result": ... }`。错误回复格式为 `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`。协议版本为 `2`，插件版本为 `1.3.0`。
+成功回复格式为 `{ "id": "2", "ok": true, "result": ... }`。错误回复格式为 `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`。协议版本为 `2`，插件版本为 `1.4.0`。
 
 认证和状态回复通过 `pluginName="KK_StoryNPCBridge"` 与 `pluginGuid="KK_StoryNPCBridge"` 标识插件。单个 DLL 直接安装为 `BepInEx/plugins/KK_StoryNPCBridge.dll`。
 
@@ -81,19 +81,33 @@ bridge.request(**phone['queueRequest'])
 
 ### 表情
 
-`expression_catalog` 返回 `eyes`、`eyebrow`、`mouth` 数组，以及连续值／布尔值 `controls`。英文表情名称根据原生形变目标标签解释。`morphTargets` 记录实际网格及其张开／闭合混合形状名称。对于未知的自定义表情，会明确标注为未命名，而不会套用其他模型的表情含义。
+`expression_catalog` 保留 `eyes`、`eyebrow`、`mouth` 数组，并提供实时 `controls`、`gaze` 视线模式和语义 `presets`（也由 `expression_presets` 返回）。英文名称解释实际原生 `morphTargets`，未知自定义模式仍标为未命名。控制参数、视线模式和预设均返回当前视觉上下文的 `available`、`unavailableReason`。
 
 ```python
-eyes = catalog['expressions']['eyes'][2]  # Smiling eyes on the default model
-bridge.request('set_expression', changes={
-    'eyes': eyes,
-    'eyebrow': catalog['expressions']['eyebrow'][0],
-    'mouth': catalog['expressions']['mouth'][1],
-    'eyesOpen': 1.0, 'blink': False,
-}, **p)
+face = bridge.request('expression_catalog', target=p['target'])
+smile = next(x for x in face['presets'] if x['key'] == 'smile' and x['available'])
+bridge.request('set_expression', changes={'preset': smile, 'blush': 0.4}, **p)
+# 原有模式引用仍可使用；视线引用的用法相同。
+gaze = next(x for x in face['gaze'] if x['available'] and x['nativeType'] == 'TARGET')
+bridge.request('set_expression', changes={'gaze': gaze}, **p)
 ```
 
-`eyesOpen` 为 `[0,1]` 范围内的数值；`blink` 为布尔值。嘴巴张开度由原生游戏控制：`expression.mouthOpen` 仅供只读上报，不列入可写 `controls`。在 `set_expression.changes` 中传入 `mouthOpen` 会返回 `unsupported_field`；混合提交中包含该字段时，整次修改在应用任何字段前被拒绝。旧配置中保存的张开度会被忽略。嘴型模式（`mouth`）仍可写；应用表情时插件不再写入嘴部张开上限或固定张开比例。`clear_expression` 会清除覆盖，将表情管理交回原生游戏。实时角色对象包含数值型 `expression`、带说明的 `expressionDetails`，以及表示模式数量的 `expressionLimits`。
+| 参数 | 输入／原生行为 |
+| --- | --- |
+| `eyesOpen`、`eyebrowOpen` | 0–1 数值；开合上限。实际效果取决于所选形变及眨眼 |
+| `mouthOpen` | 0–1 数值；嘴部张开**上限**，不会隐式固定嘴巴 |
+| `mouthFixed` | 布尔值；true 将嘴部固定在 `mouthOpen`，false 恢复原生运动／口型同步 |
+| `blush` | 0–1 数值；脸颊着色强度。游戏关闭脸红或缺少材质支持时返回 `unsupported_control`，不修改游戏设置 |
+| `tears` | 0–3 整数：无、轻、中、重三级原生泪水网格；拒绝小数 |
+| `highlight` | 布尔值；显示／隐藏原生眼睛高光 |
+| `blink` | 布尔值；原生自动眨眼 |
+| `gaze` | `expression_catalog.gaze` 中的模式对象、key 或整数 ID；编号属于当前加载的控制器 |
+
+视线支持原生 `FORWARD`（相对头部向前）、`TARGET`（当前原生眼神目标）、`AWAY` 模式。不会转动头部、选择新目标，也不接受任意坐标、角度或 `"down"`／`"up"` 字符串。原生 `CONTROL` 条目需要固定角度数据，会明确标为不可用。漫游时只在受控桥接模型上维持指定模式，其他 NPC 保持原生控制。
+
+预设为 `neutral`、`smile`、`shy`、`crying`、`angry`、`surprised`。在 `changes.preset` 中传入语义 key 或返回条目，显式字段覆盖解析结果。它们组合当前模型的眉／眼／嘴形变及开合、脸红、泪水、高光和视线。`surprised` 会显式固定嘴部，其他预设解除固定。条目包含可复用的 `changes`、准确的 `patterns` 和可执行 `request`。模式 ID 按实时形变标签解析，不使用固定数字；缺失／含糊的必需形变或不可用参数会使预设不可用，调用时在修改任何状态前返回 `preset_unavailable`。原有动态模式选择仍可使用。
+
+`set_expression` 保留已有模式引用，返回实际原生 `expression`、带说明的 `expressionDetails`（含视线）及模式数量 `expressionLimits`。整批参数先验证再应用。省略的额外字段保留已有覆盖或原生值，覆盖保存到故事档案。`clear_expression` 删除覆盖，恢复模型上捕获的覆盖前额外参数，并将表情管理交回游戏；释放控制、原生活动接管及模型变化也会恢复这些值，包括嘴部固定状态。缺少着色器／控制器／泪水网格以及不支持的上下文会明确上报不可用，不提供模拟效果。
 
 ### 原生任务与地图
 
@@ -271,6 +285,7 @@ assert retry['replayed'] is True  # 返回首次结果，不会再次累加。
 | `sample_native_action` | 独立随机抽取其他原生女孩的当前任务，匿名返回；无需 target／generation／控制权 |
 | `map_catalog` | 故事和事件地图引用；无需 target |
 | `expression_catalog` | 当前角色的表情模式目录及控制参数 |
+| `expression_presets` | 语义预设、可用性、已解析参数及可执行请求；需要 target |
 | `animation_catalog` | 已发现的可播放 Animator 状态 |
 | `stat_catalog`／`time_catalog` | 原生属性／关系定义，或阶段、时间段和星期引用 |
 | `claim` | 角色、完整 `activityReport`、相同的 `handoverReport`、私有 `resumeToken` 与 `world`；同一持有者重复接管是幂等的 |
@@ -297,6 +312,9 @@ assert retry['replayed'] is True  # 返回首次结果，不会再次累加。
 | `trigger_native_event` | `event` 对象／key／ID；直接执行效果，返回执行状态、实际属性与跟随绑定 |
 | `set_waiting_indicator` | 布尔值 `visible`；显示／关闭 ADV 等待提示，无需会话／请求 ID |
 | `say_native` | `text`；在托管会话之外分页显示原生 ADV 回复，最多 1000 个 UTF-16 代码单元 |
+| `play_adv_sequence` | 有序 `segments`；在桥接角色已就绪的 TalkScene 中执行台词／旁白、表情和动作命令 |
+| `adv_sequence_status` | 最近一次演出报告，也包含于 `actor.advSequence`；需要 target，无需控制权／generation |
+| `cancel_adv_sequence` | 当前 `sequenceId`；跳过剩余片段，通过共用清理流程结束会话 |
 | `dialogue_open` | 可选 `text`、`initiator='player'/'npc'`、`requestInput`、`timeoutSeconds`、`afterInteractionId` |
 | `say` | `text`，可选 `requestInput`、`afterInteractionId`；开启／继续插件管理的对话流程 |
 | `dialogue_status` | 完整会话状态、请求 ID 和已显示的历史 |
@@ -363,7 +381,7 @@ bridge.request('set_waiting_indicator', visible=False, **p)
 
 ### 托管对话流程
 
-`phase` 包括 `closed`、`inviting`、`opening`、`npc_speaking`、`user_speaking`、`awaiting_input`、`waiting_reply`、`reply_error`、`ready`、`native_reaction`、`native_event` 和 `ending`。`native_event` 表示从托管会话转入活动的过渡阶段。`waitingReply`、`mouseBlocked`、`requestId`、`requestKind`、`conversationId`、`turn` 及 `errorCode` 说明当前响应流程。返回值也提供 `state=waiting_model/model_error` 形式的名称；新客户端可使用 `phase` 判断响应状态。
+`phase` 包括 `closed`、`inviting`、`opening`、`npc_speaking`、`user_speaking`、`awaiting_input`、`waiting_reply`、`reply_error`、`ready`、`native_reaction`、`native_event`、`sequence_playing`、`sequence_finishing` 和 `ending`。`native_event` 表示从托管会话转入活动的过渡阶段，`sequence_*` 表示有序 ADV 演出。`waitingReply`、`mouseBlocked`、`requestId`、`requestKind`、`conversationId`、`turn` 及 `errorCode` 说明当前响应流程。返回值也提供 `state=waiting_model/model_error` 形式的名称；新客户端可使用 `phase` 判断响应状态。
 
 `dialogue_request` 包含标识、请求类型，以及原生菜单命令或用户输入。原生按钮选择的 `userText=null`；桥接插件不会虚构玩家说出的话，也不会为外部应用打包提示词或历史上下文。原生菜单文字保留源内容。`commandId`、`category` 和可选 `eventId` 保留原生编号；已知邀请示例包括学习的 `eventId=8` 和跟随的 `eventId=11`。这些表示所观察到的 UI 意图，不是调度行动 ID。
 
@@ -376,6 +394,45 @@ bridge.request('set_waiting_indicator', visible=False, **p)
 Unity 5 的原生打字机无法安全测量补充平面 Unicode 字符（如 Emoji），仅在原生显示时将每个此类字符替换为 `□`，接口历史和分页原文仍完整保留。`nonBmpFallbacks` 返回整条回复的替换次数。无效的未配对 UTF-16 代理项会在显示前被拒绝。
 
 其他事件包括控制权接管／释放、任务排队／开始／到达／完成／失败／取消、对话取消，以及原生邀请接受／取消。事件和快照包含序号。重连后应刷新 generation 和请求标识；不要盲目重放过期的写入命令。
+
+## 有序 ADV 演出
+
+`play_adv_sequence` 是独立的原生连续演出操作。首版要求桥接角色已经处于就绪的 **TalkScene**：先接管并使用 `native_talk` 或进入她的原生聊天，完成开场后刷新视觉目录。漫游、其他 NPC 的聊天、切场景和原生活动流程均会被拒绝。接口不执行任意 ADV 指令，也不加载动画包。
+
+`segments` 接受 1–32 个对象，整批验证通过后才改变会话或视觉状态。每个片段可组合以下字段，原生命令按表情、动作、文字、可选延迟的顺序执行：
+
+| 字段 | 输入／行为 |
+| --- | --- |
+| `text` | 可选文字，每段最多 4000、整批最多 8000 个 UTF-16 代码单元；沿用 60 汉字／100 ASCII 分页及 Unicode 显示回退 |
+| `speaker` | `npc`（默认）、`player` 或 `narrator`；旁白不显示姓名。提供的玩家台词属于脚本文字，不触发输入／模型请求 |
+| `expression` | 与 `set_expression.changes` 相同，含 `preset` 及额外参数；原生 CharaExpression 和可选 CharaFixMouth 保留未指定字段 |
+| `motion` | 当前 TalkScene 的 `animation_catalog` 动画对象、key 或状态哈希；使用已加载的 Animator，不更换控制器／资源 |
+| `waitSeconds` | 可选 0–30 的数字，在台词被推进后延迟；纯视觉片段也可使用原生延迟 |
+
+每段至少包含文字、非空表情、动作或正数延迟。未知字段、无效引用和后续片段错误都会拒绝整批请求。文字通过点击或原生自动模式正常推进。同一时间只执行一条演出，期间提交新演出或直接修改视觉会返回 `adv_sequence_busy`；存在待回复请求、原生部位反应或外部等待提示时返回 `dialogue_busy`。
+
+```python
+# p 对应已经接管、且处于就绪原生聊天中的角色。
+motion = bridge.request('animation_catalog', target=p['target'])[0]
+run = bridge.request('play_adv_sequence', segments=[
+    {'text': '我有些话想告诉你。', 'expression': {'eyes': 1},
+     'motion': motion},
+    {'speaker': 'narrator', 'text': '她稍微停顿了一会儿。'},
+    {'expression': {'mouth': 1}, 'waitSeconds': 0.5},
+    {'text': '我们继续聊吧？'},
+], **p)
+status = bridge.request('adv_sequence_status', target=p['target'])
+# 显式取消这次演出：
+bridge.request('cancel_adv_sequence', sequenceId=run['sequenceId'], **p)
+```
+
+报告包含 `sequenceId`、`state`、来源 `generation`／`world`、`conversationId`、从 1 开始的 `segment`（开始前为 0）、`segmentCount`、已观测 `page`、`pageCount`、可复用的规范化 `segments`、`reason`、原生 `error`、时间戳，以及终止时的 `actual` 表情／动画哈希读回值。状态包括 `queued`、`running`、`finishing`、`completed`、`cancelled`、`failed`，恢复等待期间为 `paused_reconnect`。保留最近一次终止报告；它描述该次演出，不是实时视觉状态。切换视觉上下文后需刷新动画引用。
+
+生命周期事件为 `adv_sequence_requested`、`adv_sequence_started`、`adv_sequence_segment_started`，以及恰好一次的终止事件：`adv_sequence_completed`、`adv_sequence_cancelled` 或 `adv_sequence_failed`。`dialogue_page` 补充 `sequenceId` 和 `segment`；完整台词仅写入一次托管历史，角色为 `assistant`、`user` 或 `narrator`。提供的玩家／旁白文字发送 `adv_sequence_text`，NPC 台词使用 `npc_dialogue`；实际显示的台词继续由现有 `game_dialogue` 记录，并包含准确的说话者／参与者身份。
+
+没有托管会话时，演出临时复用其生命周期，在原生 Close 完成后解除托管，保留 TalkScene 及菜单，随后仍可使用 `say_native`。在已有空闲托管对话（`ready`／`awaiting_input`）中，完成后恢复原状态，并保留历史和输入草稿；不会创建外部回复请求。演出视觉变化是临时效果，结束后恢复之前保存／手动设置的覆盖状态。未运行演出时，`say`、`say_native` 和普通事件沿用既有行为。
+
+取消、原生执行错误、释放控制和宿主／世界变化会丢弃剩余片段并使用现有会话清理；显式取消会结束会话。过期演出 ID 会被拒绝；重复取消当前已终止的 ID 仅返回报告，不重复发事件。意外断线使用既有预留控制权及 token `resume` 机制，原生标记／延迟和文字推进暂停，恢复后继续而不重放。等待期到期则取消演出、交还原生控制；原生场景切换会清理捕获的宿主，不推进其他脚本。手动客户端提供 `sequence FILE`（UTF-8 JSON 片段数组）、`sequence_status` 和 `sequence_cancel`。
 
 ## 直接执行原生活动效果
 

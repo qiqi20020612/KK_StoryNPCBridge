@@ -46,7 +46,7 @@ namespace KK_StoryNPCBridge
                 foreach (var pair in stats) ownedStats[pair.Key] = pair.Value;
                 object value;
                 if (data.TryGetValue("face", out value) && value is Dictionary<string, object>)
-                    foreach (var pair in (Dictionary<string, object>)value) if (ownedFace.ContainsKey(pair.Key)) ownedFace[pair.Key] = pair.Value;
+                    foreach (var pair in (Dictionary<string, object>)value) if (IsFaceField(pair.Key)) ownedFace[pair.Key] = pair.Value;
                 if (data.TryGetValue("observedDayIndex", out value)) observedDayIndex = (int)Number(value, 0, int.MaxValue, "observedDayIndex");
             }
             InitializeAutonomyJournal();
