@@ -4,7 +4,7 @@
 
 以下编号映射基于日版原版 Koikatu 与默认女性模型（`ill_Default_Female`）。可用 ID、模型特有表情及游戏当前条件以实时 `catalog` 为准。原生形变标识是源数据；英文表情标签用于解释这些标识，本页提供对应的中文说明。接口返回的名称和描述仍为英文。
 
-[API 命令与引用参数规则](../API.zh-CN.md)（[English](../API.md)）。可调用的引用接受对应参数领域中的返回对象、`key` 或数值 `id`；游戏时间引用仅供读取。队列任务使用相同的行动与地图编号；任务 ID 本身则是每次执行的唯一标识。
+[API 命令与引用参数规则](../API.zh-CN.md)（[English](../API.md)）。可调用的引用接受对应参数领域中的返回对象、`key` 或数值 `id`；游戏时间和穿着引用仅供读取。队列任务使用相同的行动与地图编号；任务 ID 本身则是每次执行的唯一标识。
 
 ## 关系
 
@@ -173,6 +173,20 @@
 | 65 | `map/65` | 公园 |
 | 66 | `map/66` | 教堂事件场景 |
 | 70 | `map/70` | 器材仓库 |
+
+## 穿着类型
+
+来自 `clothing_catalog`／`catalog.clothingTypes` 的只读原生穿着栏位编号。`actor.clothing` 及 `clothing_status` 观测实际加载的模型，不提供更换操作。栏位类别不识别单件衣物或脱衣状态；可用性和数据来源见[当前穿着类型](../API.zh-CN.md#当前穿着类型)。
+
+| ID | Key | 原生名称 | 含义 |
+| --- | --- | --- | --- |
+| 0 | `coordinate/0` | School01 | 校服 1 |
+| 1 | `coordinate/1` | School02 | 校服 2 |
+| 2 | `coordinate/2` | Gym | 体操服 |
+| 3 | `coordinate/3` | Swim | 泳装 |
+| 4 | `coordinate/4` | Club | 社团服 |
+| 5 | `coordinate/5` | Plain | 私服 |
+| 6 | `coordinate/6` | Pajamas | 睡衣 |
 
 ## 表情模式
 
@@ -416,6 +430,20 @@
 | -1624975941 | `talk` | 对话：说话 |
 | -1951916837 | `talk_uke` | 对话：倾听 |
 | 1975430100 | `Toilet` | 上厕所（Toilet） |
+
+## 原生 ADV 动作资源
+
+`adv_motion_catalog` 和 `play_adv_motion` 使用独立的 `motion` 对象。状态哈希属于所选控制器，不是调度行动 ID。可复用 `motions[].motion` 或完整的 `request` 模板；已加载状态仍使用 `animation_catalog`／`play_animation`。详见[参数支持范围及机制对比](../API.zh-CN.md#高级原生-adv-动作)。
+
+原生资源示例（调用时会验证当前安装中是否可用）：
+
+| 状态 key | 视觉含义 | 控制器 bundle / asset | 可选辅助资源对 |
+| --- | --- | --- | --- |
+| `Stand_08_00` | ADV 站姿 | `adv/motion/controller/adv/00.unity3d` / `cf_adv_00_00` | IK：`adv/motion/iklist/00.unity3d` / `cf_adv_00_00` |
+| `kyudo_05_1` | 与弓道相关的坐姿 | `adv/motion/controller/adv/00.unity3d` / `cf_adv_suwari_00` | IK：`adv/motion/iklist/00.unity3d` / `cf_kyudo_05` |
+| `karaoke_sing_00` | 卡拉 OK 视觉动作 | `adv/motion/controller/event_301/20.unity3d` / `cf_EventCG_301` | 摇晃：`adv/motion/yurelist/20.unity3d` / `yure_EventCG_301` |
+
+仅开放原生第 0 层。覆盖资源对及非零／多层暂不开放。这些动作不会创建对应场景、道具、搭档、导航或游戏事件效果。目录会用原生状态检查筛选已发现的候选，但不保证穷举全部状态。
 
 ## 重新生成编号参考
 

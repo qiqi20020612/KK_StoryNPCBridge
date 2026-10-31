@@ -1,4 +1,4 @@
-# KK_StoryNPCBridge API 1.4.0
+# KK_StoryNPCBridge API 1.5.0
 
 English | [简体中文](API.zh-CN.md)
 
@@ -11,7 +11,7 @@ Use UTF-8 newline-delimited JSON over IPv4 TCP loopback. The default port is `64
 {"id":"2","op":"status"}
 ```
 
-Success is `{ "id": "2", "ok": true, "result": ... }`. Errors are `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`. The protocol version is `2`; the plugin version is `1.4.0`.
+Success is `{ "id": "2", "ok": true, "result": ... }`. Errors are `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`. The protocol version is `2`; the plugin version is `1.5.0`.
 
 Authentication and status replies identify the plugin with `pluginName="KK_StoryNPCBridge"` and `pluginGuid="KK_StoryNPCBridge"`. The single DLL installs directly as `BepInEx/plugins/KK_StoryNPCBridge.dll`.
 
@@ -47,9 +47,13 @@ Normal termination must send `release`, `release_all` or `disconnect` before clo
 
 `actor.profile` identifies `save`, SHA-256 `key`, `scope='story_save_slot'` and `initializedThisLoad`. The key derives from the native save filename, case-insensitively. Sidecars live in `BepInEx/config/KK_StoryNPCBridge/profiles/<key>/`: `owned-actor.json`, `owned-native.bin` and `activity-journal.json`. First creation for a slot starts with scores/counters `0`, exposed flags `false`, `relation=-1`; subsequent loads retain that slot's bridge progress. This initialization does not clear the game's internal identity, card or scheduling setup. A successful native Save As branches the current bridge progress into the destination slot. Back up these sidecars with the native saves. Previous unscoped files remain untouched and are not automatically imported into each slot.
 
+`actor.profile.savePolicy='native_save_only'` means changes apply to native memory immediately, while the three bridge sidecars are written only after the matching native story-save routine succeeds. This includes native autosaves using that routine. The destination comes from the actual save path, so Save As writes the destination slot. A failed native save or a development save-export probe does not commit bridge files.
+
+Attribute/expression changes, native events, dialogue return, calendar advancement, control handover, periodic sampling, shutdown and story reload do not independently save bridge data. New bridge data files are first created on a native save. Unsaved progress is discarded on reload/exit unless the game itself performs a native save. `profile_save_completed` confirms all bridge files were written; `profile_save_failed` reports sidecar I/O errors separately from the game's own save. Save again through the game to retry that write; do not replay already-applied attribute deltas. There is no separate bridge-save API.
+
 ## Catalogs and reference inputs
 
-`catalog` returns `actions`, `maps`, `expressions`, `animations`, `stats`, `time`, `nativeEvents`, `idDomains`, `ui`, `generation` and `descriptionLanguage="en"`. No ownership is needed. Catalogs are discovered from the loaded installation. Expressions and animations require an active model; check `visualAvailable` and `visualContext` (`roaming` or `native_talk`). Refresh visual catalogs when entering or leaving native talk, which uses a separate model/Animator.
+`catalog` returns `actions`, `maps`, `expressions`, `animations`, `stats`, `time`, `clothingTypes`, `nativeEvents`, `idDomains`, `ui`, `generation` and `descriptionLanguage="en"`. No ownership is needed. Catalogs are discovered from the loaded installation. Expressions and animations require an active model; check `visualAvailable` and `visualContext` (`roaming` or `native_talk`). Refresh visual catalogs when entering or leaving native talk, which uses a separate model/Animator.
 
 Each discrete entry has an integer `id`, stable `key`, English `name` and English `description`. Native source names or exact morph targets are included where applicable. Entries with `request` / `queueRequest` contain command parameters with the current actor generation, ready to pass to `BridgeClient.request` after claiming control. The client adds the transport request ID; raw TCP clients must add their own `id`. Requests do not claim automatically. Refresh the catalog after loading another story or character model.
 
@@ -107,7 +111,32 @@ Gaze supports native `FORWARD` (relative to the head), `TARGET` (the existing na
 
 Presets are `neutral`, `smile`, `shy`, `crying`, `angry` and `surprised`. Pass a semantic key or returned entry in `changes.preset`; explicit fields override resolved values. They combine live eyebrow/eye/mouth morphs with openings, blush, tears, highlights and gaze. `surprised` explicitly fixes the mouth; other presets release it. Entries include resolved reusable `changes`, exact `patterns` and executable `request`. Pattern IDs resolve from live morph labels, never fixed numbers. Missing/ambiguous required morphs or unavailable controls make a preset unavailable; calling it returns `preset_unavailable` before any changes. Direct dynamic pattern selection remains available.
 
-`set_expression` retains existing pattern references and returns actual native `expression`, descriptive `expressionDetails` (including gaze) and pattern-count `expressionLimits`. The whole batch validates first. Omitted extra fields preserve prior overrides or native values. Overrides are saved in the story profile. `clear_expression` removes overrides, restores captured pre-override extra values on the model and returns expression management to the game. Release, native activity takeover and model changes also restore these values, including mouth fixation. Missing shaders/controllers/tear meshes and unsupported contexts are reported unavailable, with no simulated fallback.
+`set_expression` retains existing pattern references and returns actual native `expression`, descriptive `expressionDetails` (including gaze) and pattern-count `expressionLimits`. The whole batch validates first. Omitted extra fields preserve prior overrides or native values. Overrides are written to the story profile at the next successful native save. `clear_expression` removes overrides, restores captured pre-override extra values on the model and returns expression management to the game. Release, native activity takeover and model changes also restore these values, including mouth fixation. Missing shaders/controllers/tear meshes and unsupported contexts are reported unavailable, with no simulated fallback.
+
+### Current clothing type
+
+`actor.clothing` appears in `get`, `status`, `list` and subscribed snapshots. `clothing_status` returns that same observation with only `target`; ownership and `generation` are not required. `clothing_catalog` and `catalog.clothingTypes` describe native coordinate slots and require no target. All clothing data is read-only; there is no clothing-change command or executable change request.
+
+```python
+clothing = bridge.request('clothing_status', target='bridge:main')
+if clothing['available']:
+    print(clothing['type']['id'], clothing['type']['key'], clothing['type']['name'])
+types = bridge.request('clothing_catalog')
+```
+
+The observation includes `available`, `unavailableReason`, `readOnly=true`, `source='native_model'`, `nativeField='ChaControl.fileStatus.coordinateType'`, `context` (`roaming`, `native_talk` or `native_scene`) and a `type` reference. The reference contains `id`, `key`, English `name`/`description`, native enum `nativeName`, `known` and `readOnly=true`.
+
+| ID | Key | Native name | Meaning |
+| --- | --- | --- | --- |
+| 0 | `coordinate/0` | `School01` | School uniform 1 |
+| 1 | `coordinate/1` | `School02` | School uniform 2 |
+| 2 | `coordinate/2` | `Gym` | Gym outfit |
+| 3 | `coordinate/3` | `Swim` | Swimsuit |
+| 4 | `coordinate/4` | `Club` | Club outfit |
+| 5 | `coordinate/5` | `Plain` | Casual outfit |
+| 6 | `coordinate/6` | `Pajamas` | Pajamas |
+
+This reports the active model's native slot, including the separate TalkScene model. It does not infer clothes from appearance, list individual garments or report partial undressing; a character card may assign different clothes to any slot. It does not substitute the scheduler's `Heroine.NowCoordinate` or a previously cached value. Without a ready story/model, or during scene changes, `available=false` and `type`, `source`, `context` are null; reasons include `story_not_ready`, `model_not_loaded` and `scene_transition`. Unknown actual slot IDs are preserved with `known=false`. Coordinate IDs are distinct from scheduler actions such as `change_clothes`.
 
 ### Native tasks and maps
 
@@ -182,6 +211,53 @@ bridge.request('play_animation', state=idle['id'], **p)
 
 Playing `Reading` does not automatically find a seat, add a book or run action `9`. Use the scheduler action for native gameplay. Live animation state is described by `animationDetails`; `animation.state`/hashes report actual playback, while `requestedState` identifies an explicit override.
 
+### Advanced native ADV motions
+
+`play_adv_motion` is a separate, transient visual operation in the bridge NPC's **ready native TalkScene**. It builds a native `ADV.CharaMotion` command through the existing sequence executor. Claim the actor and use the current generation. It does not open a conversation, run a scheduler action, attach props or call an external model. `play_animation`, `animation_catalog` and the loaded-state `motion` field in ordinary sequence segments retain their existing meanings.
+
+| Mechanism | Context | Resources and effects | Lifetime |
+| --- | --- | --- | --- |
+| `play_animation` / `Animator.Play` | Roaming or native talk | Plays a state on the currently loaded Animator's layer 0; no controller, IK or shake data loading | Existing explicit animation override, until stopped/replaced/released |
+| `play_adv_motion` / native `CharaMotion` | Ready bridge TalkScene only | May load a controller, native IK data and native shake/body-shape data, then select a state | One native delay, then restores the captured animation and auxiliary state |
+
+The operation uses the current native camera and character placement. Sitting, lying or event-specific poses can place part of the model outside the frame when used with a standing conversation camera. It does not automatically reframe the camera or load the source event's staging; a valid motion is not a guarantee of suitable composition in every TalkScene.
+
+Supply a `motion` object with the following **case-sensitive API keys**. Native command field names are listed for comparison; PascalCase names are not API aliases.
+
+| Native field | API key | Support |
+| --- | --- | --- |
+| State | `state` | Required state name, checked with `Animator.HasState(0, hash)` |
+| Bundle / Asset | `bundle` / `asset` | Optional pair identifying an installed `RuntimeAnimatorController`; omission uses the live controller |
+| IKBundle / IKAsset | `ikBundle` / `ikAsset` | Optional pair identifying a native IK `TextAsset`; must contain the selected state without corrections requiring other staged characters |
+| ShakeBundle / ShakeAsset | `shakeBundle` / `shakeAsset` | Optional pair identifying native `YureExcel` data; must contain the selected state |
+| OverrideBundle / OverrideAsset | `overrideBundle` / `overrideAsset` | Unavailable; rejected with `unsupported_control`. Native wrapper creation was observed, but effective clip replacement has not been verified |
+| LayerNo | `layerNo` | Integer `0` only, also the default. Nonzero layers and multi-layer lists are unavailable |
+
+Bundle paths are relative to `abdata`, use forward slashes and end in `.unity3d`. Both members of each resource pair must be present or empty. No new data is loaded for an omitted pair; native state selection can still enable/disable the existing IK or apply existing/default shake data. All input fields, resource types, state compatibility and duration validate before staging starts. Unknown fields and unsupported controls are rejected; they are not silently ignored.
+
+`adv_motion_catalog` is read-only and requires the bridge's loaded TalkScene model. Its optional `motion` object selects the controller/IK/shake resources to inspect. `motions[]` contains compatible names, signed hashes, reusable `motion` objects and complete `request` templates; `parameters` describes supported fields and limits. The discovery candidates come from clip names, IK/shake entries and the live animation catalog, filtered with `HasState`. `discoveryComplete=false`: Unity does not expose an exhaustive runtime state-name enumeration. Supply a known `motion.state` to check an additional name. Neither IDs nor clip names from a different controller are interchangeable.
+
+```python
+catalog = bridge.request('adv_motion_catalog', target='bridge:main', motion={
+    'bundle': 'adv/motion/controller/adv/00.unity3d',
+    'asset': 'cf_adv_suwari_00',
+    'ikBundle': 'adv/motion/iklist/00.unity3d',
+    'ikAsset': 'cf_kyudo_05',
+})
+entry = next(x for x in catalog['motions'] if x['key'] == 'kyudo_05_1')
+run = bridge.request(**entry['request'])  # Default durationSeconds=3.
+# Or: bridge.request('play_adv_motion', motion=entry['motion'],
+#                    durationSeconds=2, **p)
+state = bridge.request('adv_sequence_status', target='bridge:main')
+# Cancel with cancel_adv_sequence and run['sequenceId'].
+```
+
+`durationSeconds` is 0.1–30 (default 3), using a native wait that normal ADV advancement can skip. Progress, completion, cancellation and failures reuse `adv_sequence_status`, `cancel_adv_sequence` and `adv_sequence_*` events, with `operation='play_adv_motion'` and a textless `segments[].nativeMotion`. `running` means the native list was submitted; `segment=1` marks entry into its motion segment. No dialogue line/history entry or external-reply request is created. Concurrent sequences/direct visual writes and native activity triggers return `adv_sequence_busy`; wait or cancel first.
+
+The completion report's `actual` captures the staged controller, state hash, clip names/weights, IK enabled/state names, actual dynamic-bone flags and body-shape masks before restoration. `motionRestore='restored'` confirms restoration of the previous controller, layer states/times/weights, numeric/boolean Animator parameters, speed, native IK data/enable state and shake data/physical flags. Previous manual visual overrides resume. Trigger parameters and an in-progress Animator transition are not replayed; restoration resumes the captured current state. The operation does not persist resource selections to the story profile.
+
+An existing idle managed dialogue resumes after completion; a temporary session detaches and returns to the native menu. Unexpected disconnects pause at native markers/delays and resume with the existing token, without replay. Cancellation, native execution failure, release and scene changes discard remaining work. `motionRestore='host_changed'` means cleanup avoided writing into a replaced host/world; a restoration exception reports `state='failed'`, `reason='motion_restore_failed'` and `motionRestore='failed'`. `say`, `say_native`, normal sequence motions and native gameplay actions use their existing paths.
+
 ## Native attributes and relationships
 
 `stat_catalog` (also `catalog.stats`) returns field types, write ranges, `adjustable`, English meanings, `relationships` and the `adjustment` policy. `actor.stats` contains the actual native values and `actor.relationship` their descriptive relation. Native effects may produce values outside the API write ranges (for example negative anger); observations and saved bridge progress preserve those values. `set_stats.changes` validates all fields before changing state, writes native state, reads it back and returns the complete actor. `stats_changed` carries `requested`, `before` and `actual`. Both stat operations require the current story actor, ownership and generation, with no roaming/ADV/map/model restriction.
@@ -217,7 +293,7 @@ assert actual['stats']['relation'] == 1
 
 `adjust_stats` takes a nonempty `deltas` object and a caller-generated `mutationId`. Only the eight integer score/counter fields in the table support adjustment (`adjustable=true`); relationships and boolean flags remain absolute writes through `set_stats`. Each delta must be an integer from -2147483648 through 2147483647; booleans, strings, fractions and unknown fields are rejected before any write. Use field `key` values returned by `stat_catalog` as `deltas` keys.
 
-The operation reads current native values, adds each delta using 64-bit arithmetic, and clamps the resulting value to that field's write range: 0–100 for scores, 0–2147483647 for counters. Clamping applies even if the observed starting value is outside that range. It reuses `set_stats` validation/normalization, native synchronization, sidecar persistence and whole-batch failure rollback, including talk-event markers. All fields are calculated from one snapshot and committed synchronously on the Unity thread. Persistence of restored sidecars remains best effort on I/O failure, as with `set_stats`.
+The operation reads current native values, adds each delta using 64-bit arithmetic, and clamps the resulting value to that field's write range: 0–100 for scores, 0–2147483647 for counters. Clamping applies even if the observed starting value is outside that range. It reuses `set_stats` validation/normalization, native synchronization and whole-batch in-memory failure rollback, including talk-event markers. All fields are calculated from one snapshot and applied synchronously on the Unity thread. Disk persistence is deferred until a successful native story save, as with `set_stats`; `stat_catalog.savePolicy` is `native_save_only`.
 
 `set_stats` continues to mean absolute assignment and rejects out-of-range values. Adjusting `anger` retains the existing `isAnger = actual anger > 0` derivation. Adjustments do not score emotions, change relationship rules, or convert saturated favor into intimacy.
 
@@ -247,7 +323,7 @@ For example, starting at `favor=98`, `intimacy=1`, `lewdness=100`, the deltas ab
 
 `mutationId` is a case-sensitive, nonblank string of at most 128 characters, distinct from the TCP request `id`. A UUID is suitable. Reusing it with the same normalized field/delta pairs returns the original outcome, regardless of field order, later writes, normal release/reclaim or authenticated `resume`. Reusing it with different deltas returns `adjustment_conflict`. Ownership, current story and generation are still checked before replay. Keep the ID and deltas when retrying a timeout; after reconnecting, resume or claim control first. The client does not generate replacement IDs or retry automatically.
 
-Records are kept in memory for the actor generation, not across story recreation/game restart; those produce a new generation and reject old commands. Up to 4096 execution attempts are retained without eviction. When full, new IDs return `adjustment_limit` before any write; recorded IDs remain queryable. Input-validation failures are not recorded. Once execution starts, a failure is recorded as `adjustment_failed`; that ID will return the same error without executing again. Inspect `get` and resolve the failure before deliberately issuing a new ID. This also prevents automatic reapplication after an uncertain rollback/persistence failure.
+Records are kept in memory for the actor generation, not across story recreation/game restart; those produce a new generation and reject old commands. Up to 4096 execution attempts are retained without eviction. When full, new IDs return `adjustment_limit` before any write; recorded IDs remain queryable. Input-validation failures are not recorded. Once execution starts, a failure is recorded as `adjustment_failed`; that ID will return the same error without executing again. Inspect `get` and resolve the failure before deliberately issuing a new ID. This also prevents automatic reapplication after an uncertain execution/rollback failure. A later sidecar-save error does not reapply or undo an acknowledged adjustment.
 
 ## Player and native game time
 
@@ -268,6 +344,14 @@ Records are kept in memory for the actor generation, not across story recreation
 
 These events have `target=null` and `generation=null`. Initial loading establishes a baseline instead of announcing a completed day. Entering night and actually advancing the calendar are separate events. `available=false`/`day=null` indicates that a ready story baseline does not yet exist.
 
+## Native period relocation
+
+While the bridge is controlled, a native stage change records a pending relocation for the game's own world initialization. Its initial action may assign the new map, position, orientation and clothing; after that initialization the bridge holds the native destination, and subsequent task selection remains under plugin control. Ordinary player map changes do not independently request this relocation. No map/position table or teleport command is used.
+
+An applied relocation interrupts old direct movement, approaching, active/queued tasks, following and dialogue/activity state with reason `native_stage_changed`; it does not report those tasks as completed. Controller ownership and recovery reservations remain in place. After the scene settles, the current map/clothing are captured and the `restorePosition` baseline is updated to the new native placement. During disconnection recovery the NPC remains paused after relocation. The activity journal still records movement as map changes only.
+
+`actor.nativeRelocation` retains the latest report: `relocationId`, source generation/world, `state` (`pending`, `initializing`, `waiting_scene`, `completed`, `cancelled`, `failed`), `fromStage`/`toStage`, source/destination map references, terminal `actual` map/clothing and `error`. Lifecycle events are `native_relocation_requested`, `native_relocation_completed`, `native_relocation_cancelled` and `native_relocation_failed`. Pending stage changes can coalesce before native initialization. Completion is observed after native placement, separately from the earlier `game_stage_changed` / `game_time_period_changed` notifications.
+
 ## Commands
 
 Unless stated otherwise, actor commands take `target`; write commands also take `generation` and require control.
@@ -279,6 +363,8 @@ Unless stated otherwise, actor commands take `target`; write commands also take 
 | `subscribe` | Enable snapshot pushes for this connection; close it to stop |
 | `status` / `list` | World, player, one owned actor, events, English description language and configured UI language |
 | `get` | Actor object, including full `activityReport` and descriptive current IDs |
+| `clothing_status` | Current native clothing type observation; target required, no owner/generation |
+| `clothing_catalog` | Read-only native coordinate slot references; no target needed |
 | `catalog` | All runtime ID catalogs; no target or ownership needed |
 | `native_actions` | Full native action directory for the actor |
 | `native_plan` | Read-only live native planning and pre-control snapshot; no ownership needed |
@@ -308,6 +394,8 @@ Unless stated otherwise, actor commands take `target`; write commands also take 
 | `adjust_stats` | Stable `mutationId`, integer `deltas`; atomically add/clamp numeric fields and return before/actual values with replay protection |
 | `set_expression` / `clear_expression` | Facial references and controls described above / clear override |
 | `play_animation` | `state` reference, raw state key or signed state hash |
+| `adv_motion_catalog` | Optional `motion` resource object; read-only native TalkScene discovery, no ownership/generation required |
+| `play_adv_motion` | Native `motion` resource object, optional `durationSeconds` (0.1–30); transient advanced TalkScene motion |
 | `native_talk` | Start the native talk scene; actual native dialogue/menu remains available |
 | `trigger_native_event` | `event` object/key/ID; execute a native activity effect directly; returns execution state, actual stats and follow binding |
 | `set_waiting_indicator` | Boolean `visible`; show/hide the essential ADV waiting notice; no conversation/request ID needed |
@@ -387,9 +475,11 @@ Speaker roles are `bridge`, `player`, `npc`, `narrator` or `unknown`. IDs are `b
 
 Touch/look events include `interactionId`, `kind`, `nativeMode`, `region`, voice/pose data and lifecycle. `nativeMode=0` means touch; `1` means look. Native voice, animation and counters execute normally. An external application may explicitly call `say` or `dialogue_open` with `afterInteractionId` once the reaction completes; no automatic dialogue request is created.
 
-Supplied replies are displayed through native ADV with a page budget equivalent to **60 Chinese characters or 100 ASCII characters**. Each Unicode text element beginning with ASCII costs 3 width units; every other text element costs 5. ASCII letters, digits, spaces and punctuation therefore cost 3; Chinese characters, full-width punctuation and other non-ASCII elements cost 5. Mixed text shares the 300-unit budget (for example, 30 Chinese characters plus 50 ASCII letters). A text element is moved to the next page if adding it would exceed the budget; combining sequences and surrogate pairs are not split by this pagination step. Line breaks also end a page. Managed replies accept up to 4000 UTF-16 units. The full original reply appears once in conversation history and `npc_dialogue`, regardless of the page count.
+Supplied replies use **native layout pagination**, with no fixed character ceiling per page. Before displaying text, the bridge measures the current native font, size, line spacing, canvas scale and text rectangle using the native formatter and Unity's TextGenerator on an inactive measurement copy. A two-unit inset guards the measured edges. Pages prefer nearby punctuation/word boundaries; words wider than a line are wrapped at text-element boundaries. Explicit line breaks consume available lines rather than always starting another page. Recognized native `b`, `i`, `color`, `size` and `material` scopes are closed/reopened across pages. Managed replies still accept up to 4000 UTF-16 units; full original replies remain in conversation history and `npc_dialogue` once, independently of display pages.
 
-`dialogue.pagination` reports `page`, `pageCount`, `maxCharacters=100` (the absolute text-element ceiling), `maxCjkCharacters=60`, `maxWidthUnits=300`, `countUnit='weighted_text_element'`, `asciiWidthUnits=3`, `nonAsciiWidthUnits=5` and `nonBmpFallbacks`. Each `dialogue_page` event includes the same limit/counting metadata, plus `conversationId`, `turn`, one-based `page`, `pageCount`, original page `text` and actual `displayText`. These are per-page display limits; they do not reduce the maximum length of the complete reply. Native word wrapping can still overflow a line for unusually long ASCII tokens without spaces.
+`dialogue.pagination` reports `mode='native_layout'`, one-based displayed `page` (initially 0), `pageCount`, `pageCountEstimated`, `layoutRevision`, `layout` and `nonBmpFallbacks`. `layout` contains `width`, `height`, `availableWidth`, `availableHeight`, `font`, `fontSize`, `lineSpacing` and `pixelsPerUnit`; dimensions are native local UI units. It is null before the first native page. The native menu may unload its ADV host, so queued text initially contributes one provisional page per fragment. `pageCountEstimated=true` indicates fragments whose actual host has not been measured. The projected count is updated on first display and if pending text must reflow after a font/rectangle change. `layoutRevision` increases when a group is measured or reflowed; page counts are not an immutable completion signal. Use dialogue/sequence completion states and events.
+
+Each `dialogue_page` event is emitted when its native Text command displays and includes that metadata, `conversationId`, `turn`, page-source `text` and actual wrapped `displayText`. Native variables are expanded for the displayed source; caller text remains unchanged in the full-reply record. Added wrapping/format scopes and supplementary-character display fallbacks do not alter that record. Remaining pages are remeasured before display when native geometry or typography changes; already visible text retains the native UI's resizing behavior. The old fixed-limit/width-unit fields are not returned. Ordinary native lines without bridge page markers retain the game's formatter. If the native layout is unavailable or a single element/style cannot fit, `dialogue_pagination_failed` reports the error and the existing conversation/sequence cleanup runs, without placing diagnostic words in ADV.
 
 Unity 5's native typewriter cannot safely measure supplementary Unicode characters (for example Emoji). Only native presentation substitutes each such character with `□`; API history and original page text are preserved. `nonBmpFallbacks` reports the number of substitutions in the reply. Invalid unpaired UTF-16 surrogates are rejected before displaying text.
 
@@ -403,7 +493,7 @@ Submit `segments` containing 1–32 objects. The whole request is validated befo
 
 | Field | Input / behavior |
 | --- | --- |
-| `text` | Optional text, up to 4000 UTF-16 units per segment and 8000 across the sequence; uses the existing 60-CJK/100-ASCII pagination and Unicode display fallback |
+| `text` | Optional text, up to 4000 UTF-16 units per segment and 8000 across the sequence; uses shared native layout pagination and Unicode display fallback |
 | `speaker` | `npc` (default), `player` or `narrator`; narration has no displayed speaker name. Supplied player lines are scripted text, without an input/model request |
 | `expression` | The same `set_expression.changes` object, including `preset` and extra controls; native CharaExpression and optional CharaFixMouth preserve omitted fields |
 | `motion` | A current TalkScene animation object, key or state hash from `animation_catalog`; uses the loaded Animator, without changing its controller/assets |

@@ -149,6 +149,7 @@ def shell(client):
     print("summon (walk to player) | native_talk | say_native text | clear_queue")
     print("native_events | native_event KEY_OR_ID | waiting on/off")
     print("sequence FILE | sequence_status | sequence_cancel (ready native_talk required)")
+    print("motion_catalog [FILE] | adv_motion FILE [seconds] (native ADV resource motion object)")
     print("dialogue text | invite [text] | reply text | respond text | dialogue_status | dialogue_retry | dialogue_close")
     target = None
     generation = None
@@ -192,6 +193,9 @@ def shell(client):
                 show(client.request("native_event_catalog"))
             elif command == "sequence_status":
                 show(client.request("adv_sequence_status", target=target or "bridge:main"))
+            elif command == "motion_catalog":
+                motion = json.loads(Path(args[0]).read_text(encoding="utf-8-sig")) if args else {}
+                show(client.request("adv_motion_catalog", target=target or "bridge:main", motion=motion))
             elif command in {"respond", "model"}:
                 actor = client.request("status")["actors"][0]
                 conversation = actor["dialogue"]
@@ -206,6 +210,10 @@ def shell(client):
             elif command == "sequence":
                 segments = json.loads(Path(args[0]).read_text(encoding="utf-8-sig"))
                 show(client.request("play_adv_sequence", target=target, generation=generation, segments=segments))
+            elif command == "adv_motion":
+                motion = json.loads(Path(args[0]).read_text(encoding="utf-8-sig"))
+                seconds = float(args[1]) if len(args) > 1 else 3
+                show(client.request("play_adv_motion", target=target, generation=generation, motion=motion, durationSeconds=seconds))
             elif command == "sequence_cancel":
                 run = client.request("adv_sequence_status", target=target)
                 if run is None:

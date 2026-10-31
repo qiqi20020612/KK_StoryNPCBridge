@@ -36,11 +36,12 @@ namespace KK_StoryNPCBridge
             PatchNative(typeof(ADV.Commands.Base.Text), "Do", Type.EmptyTypes, "BeforeAdvText", null, "AfterAdvText");
             PatchNative(typeof(ADV.TextScenario), "Initialize", Type.EmptyTypes, "BeforeAdvEpisode", null, null);
             PatchNative(typeof(SaveData.Heroine), "SetADVParam", new Type[] { typeof(ADV.TextScenario) }, null, "AdvHeroineBound", null);
+            PatchNative(typeof(HyphenationJpn), "GetFormatedText", new Type[] { typeof(UnityEngine.UI.Text), typeof(string) }, "FormatBridgeAdvPage", null, null);
         }
         static void BeforeAdvText(ADV.Commands.Base.Text __instance, ref ADV.Commands.Base.Text __state)
-        { if (Current != null) { __state = Current.recordingCommand; Current.recordingCommand = __instance; } }
-        static void AfterAdvText(ADV.Commands.Base.Text __state)
-        { if (Current != null) Current.recordingCommand = __state; }
+        { if (Current != null) { __state = Current.recordingCommand; Current.recordingCommand = __instance; Current.PrepareBridgeAdvText(__instance); } }
+        static void AfterAdvText(ADV.Commands.Base.Text __instance, ADV.Commands.Base.Text __state, Exception __exception)
+        { if (Current != null) { try { Current.CompleteBridgeAdvText(__instance, __exception); } finally { Current.recordingCommand = __state; } } }
         static void BeforeAdvEpisode(ADV.TextScenario __instance)
         {
             if (Current == null) return;
@@ -62,13 +63,13 @@ namespace KK_StoryNPCBridge
         object ResolveAdvSpeaker(ADV.TextScenario scenario, List<SaveData.CharaData> people, string raw, string name, string text)
         {
             SaveData.CharaData person = null; string source = "unresolved";
-            if (AdvSequenceBusy && advSequence.Scenario == scenario && advSequence.Segment > 0 && displayPages.Contains(text))
+            if (AdvSequenceBusy && advSequence.Scenario == scenario && advSequence.Segment > 0 && recordingCommand != null && BridgeAdvText(recordingCommand) != null)
             {
                 string role = advSequence.Segments[advSequence.Segment - 1].Speaker;
                 if (role == "narrator") return Json.Map("id", null, "role", "narrator", "name", "", "identitySource", "bridge_sequence", "candidates", new object[0]);
                 person = role == "player" ? (SaveData.CharaData)ownedSave.player : ownedHeroine; source = "bridge_sequence";
             }
-            else if (advLineActive && displayPages.Contains(text) && (queuedAdvSpeaker == "player" || queuedAdvSpeaker == "npc"))
+            else if (advLineActive && recordingCommand != null && BridgeAdvText(recordingCommand) != null && (queuedAdvSpeaker == "player" || queuedAdvSpeaker == "npc"))
             { person = queuedAdvSpeaker == "player" ? (SaveData.CharaData)ownedSave.player : ownedHeroine; source = "bridge_transfer"; }
             else if (raw.IndexOf("[P", StringComparison.Ordinal) >= 0) { person = scenario.player; source = "native_parameter"; }
             else if (raw.IndexOf("[H", StringComparison.Ordinal) >= 0)
@@ -141,7 +142,7 @@ namespace KK_StoryNPCBridge
                 AddEvent("game_dialogue", Json.Map("speaker", line.Speaker, "speakerActor", line.SpeakerActor, "text", line.Text,
                     "conversationId", line.ConversationId, "dialogueConversationId", managed, "conversation", lastAdvConversation,
                     "source", "native_adv_text", "nativeLine", line.Line, "gameTime", ReadGameTime(), "bundle", line.Scenario.LoadBundleName, "asset", line.Scenario.LoadAssetName));
-                TrackAdvPage(line.Text); pendingAdvRecords.RemoveAt(i);
+                pendingAdvRecords.RemoveAt(i);
             }
             var stale = new List<ADV.TextScenario>();
             foreach (var scenario in advEpisodeIds.Keys) if (scenario == null) stale.Add(scenario);

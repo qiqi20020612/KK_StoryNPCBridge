@@ -363,9 +363,9 @@ namespace KK_StoryNPCBridge
         object ReadCatalog()
         {
             return Json.Map("catalogVersion", 1, "descriptionLanguage", "en", "generation", ownedGeneration, "actions", ReadNativeActions(), "maps", ReadMapCatalog(), "expressions", ReadExpressionCatalog(), "animations", ReadAnimationCatalog(),
-                "stats", ReadStatCatalog(), "time", ReadTimeCatalog(),
+                "stats", ReadStatCatalog(), "time", ReadTimeCatalog(), "clothingTypes", ReadClothingCatalog(),
                 "nativeEvents", ReadNativeEventCatalog(),
-                "idDomains", Json.Map("actions", "Native story scheduler action IDs, shared by set_action and queue_action.", "expressions", "Actor-specific FBS pattern indices; eyes, eyebrow and mouth are separate domains.", "animations", "Signed Animator.StringToHash state IDs on layer 0; distinct from scheduler action IDs.", "maps", "Native map IDs; -1 means automatic selection in task commands.", "nativeEvents", "Native conversation activity event IDs; trigger_native_event applies their effects directly. Distinct from scheduler actions and commandId (event id + 10)."),
+                "idDomains", Json.Map("actions", "Native story scheduler action IDs, shared by set_action and queue_action.", "expressions", "Actor-specific FBS pattern indices; eyes, eyebrow and mouth are separate domains.", "animations", "Signed Animator.StringToHash state IDs on layer 0; distinct from scheduler action IDs.", "maps", "Native map IDs; -1 means automatic selection in task commands.", "nativeEvents", "Native conversation activity event IDs; trigger_native_event applies their effects directly. Distinct from scheduler actions and commandId (event id + 10).", "clothingTypes", "Read-only native coordinate slot IDs; not scheduler actions or clothing-change requests."),
                 "ui", Json.Map("defaultLanguage", "en", "languages", new string[] { "en", "zh-CN" }, "configSection", "UI", "configKey", "Language", "description", "Only plugin debug and essential dialogue UI are localized. API descriptions remain English."),
                 "referenceInput", "Pass a returned entry, its numeric id, or its key. Actor writes require claim and the current generation. Requests in catalog entries are ready to submit after claiming the actor.");
         }

@@ -32,11 +32,11 @@ namespace KK_StoryNPCBridge
             ownedStats = ZeroStats();
             ownedFace = NeutralFace();
             string directory = Path.Combine(Paths.ConfigPath, "KK_StoryNPCBridge");
-            Directory.CreateDirectory(directory); ownedStatePath = Path.Combine(directory, "owned-actor.json");
+            ownedStatePath = Path.Combine(directory, "owned-actor.json");
         }
         void SaveOwnedProfile()
         {
-            if (storySaveName == null) return;
+            if (!writingStorySidecars || storySaveName == null) return;
             var profile = Json.Map("schema", 2, "id", ActorId, "name", ownedName, "template", "ill_Default_Female", "stats", ownedStats, "face", ownedFace,
                 "storySave", storySaveName, "observedDayIndex", observedDayIndex);
             string temporary = ownedStatePath + ".tmp";
@@ -48,11 +48,12 @@ namespace KK_StoryNPCBridge
         {
             if (Mode == "talk") wasNativeTalk = true;
             else if (wasNativeTalk && Mode == "roaming" && !SceneBusy)
-            { wasNativeTalk = false; SyncOwnedStats(); SaveOwnedProfile(); SaveNativeProfile(); }
+            { wasNativeTalk = false; SyncOwnedStats(); }
             TickControlRecovery();
             if (action == null) { ownedState = "waiting_for_world"; return; }
             if (ownedHeroine == null) EnsureNativeHeroine(Manager.Game.Instance.saveData);
             BindNativeActor();
+            TickNativeRelocation();
             if (!ownedReady || SceneBusy || Mode != "roaming") return;
             if (Recovering) { ownedState = "waiting_reconnect"; return; }
             if (stopOnRoam) { stopOnRoam = false; if (ownedController != null) SetNativeIdle(); else resumeNativePending = true; }
@@ -69,9 +70,8 @@ namespace KK_StoryNPCBridge
         }
         void DestroyOwnedActor(string reason)
         {
-            FlushAutonomyJournal();
             disposingOwned = true;
-            SyncOwnedStats(); SaveOwnedProfile(); SaveNativeProfile();
+            SyncOwnedStats();
             if (DialogueActive) ResetAdvDialogue(reason);
             ReleaseOwned(reason, false);
             if (ownedNpc != null && action != null && action.npcList != null) action.npcList.Remove(ownedNpc);
@@ -117,6 +117,8 @@ namespace KK_StoryNPCBridge
                 "instances", OwnedInstanceCount(), "nativeRosterAtSpawn", rosterCountAtSpawn, "nativeNpcsAtSpawn", npcCountAtSpawn);
             actor.Add("native", ReadNativeStatus());
             actor.Add("nativePlanning", ReadNativePlanning());
+            actor.Add("nativeRelocation", ReadNativeRelocation());
+            actor.Add("clothing", ReadClothing());
             actor.Add("approach", ReadApproach());
             actor.Add("dialogue", ReadDialogue());
             actor.Add("advSequence", ReadAdvSequence());
@@ -167,6 +169,7 @@ namespace KK_StoryNPCBridge
         void ReleaseOwned(string reason, bool restorePosition)
         {
             if (ownedController == null && !ownedMoving && activeTask == null && nativeQueue.Count == 0 && !Approaching && !DialogueActive) return;
+            EndNativeRelocation("cancelled", reason);
             CancelPendingNativeEvent(reason); ownedNativeFollow = false;
             ClearControlRecovery(); ClearAdvControls(); FinishApproach("cancelled", reason);
             if (DialogueActive) EndAdvDialogue(reason);

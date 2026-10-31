@@ -10,7 +10,45 @@ namespace KK_StoryNPCBridge
     public sealed partial class Plugin
     {
         string storySaveName, storyProfileKey;
-        bool newStoryProfile;
+        bool newStoryProfile, writingStorySidecars;
+        sealed class NativeStorySaveScope
+        {
+            internal NativeStorySaveScope Previous;
+            internal SaveData Save;
+            internal string Path;
+            internal bool Serialized;
+        }
+        NativeStorySaveScope nativeStorySave;
+        static bool IsStorySavePath(string filename)
+        {
+            string directory = Path.GetFullPath(Path.Combine(Paths.GameRootPath, "UserData/save/game")).TrimEnd(Path.DirectorySeparatorChar);
+            return string.Equals(Path.GetDirectoryName(Path.GetFullPath(filename)), directory, StringComparison.OrdinalIgnoreCase);
+        }
+        static void BeforeStorySave(SaveData __instance, string __0, string __1, ref NativeStorySaveScope __state)
+        {
+            var p = Current;
+            if (p == null || !ReferenceEquals(__instance, p.ownedSave) || p.ownedHeroine == null) return;
+            string filename = Path.GetFullPath(__0 + __1);
+            if (!IsStorySavePath(filename)) return;
+            __state = new NativeStorySaveScope { Previous = p.nativeStorySave, Save = __instance, Path = filename };
+            p.nativeStorySave = __state;
+        }
+        static Exception AfterStorySave(NativeStorySaveScope __state, Exception __exception)
+        {
+            var p = Current;
+            if (p == null || __state == null) return __exception;
+            p.nativeStorySave = __state.Previous;
+            if (__exception == null && __state.Serialized && ReferenceEquals(__state.Save, p.ownedSave))
+            {
+                try { p.SaveProfileForNativeSlot(__state.Path); }
+                catch (Exception e)
+                {
+                    p.Logger.LogWarning("Story profile save: " + e.Message);
+                    p.AddEvent("profile_save_failed", Json.Map("save", Path.GetFileName(__state.Path), "error", e.Message));
+                }
+            }
+            return __exception;
+        }
         string StoryProfileDirectory(string saveName)
         {
             byte[] hash;
@@ -22,11 +60,11 @@ namespace KK_StoryNPCBridge
         {
             string filename = Manager.Game.SaveFileName;
             storySaveName = string.IsNullOrEmpty(filename) ? "unsaved-" + Guid.NewGuid().ToString("N") : Path.GetFileName(filename);
-            string directory = StoryProfileDirectory(storySaveName); Directory.CreateDirectory(directory);
+            string directory = StoryProfileDirectory(storySaveName);
             ownedStatePath = Path.Combine(directory, "owned-actor.json");
             newStoryProfile = !File.Exists(NativeProfilePath) && !File.Exists(ownedStatePath);
             ownedStats = ZeroStats(); ownedFace = NeutralFace(); observedDayIndex = 0; observedCycle = null; newDayPending = false;
-            lastHandoverReport = null; activityPeriodId = null; activityDirty = false;
+            lastHandoverReport = null; activityPeriodId = null;
             if (File.Exists(ownedStatePath))
             {
                 var data = Json.Parse(File.ReadAllText(ownedStatePath, Encoding.UTF8)) as Dictionary<string, object>;
@@ -51,20 +89,22 @@ namespace KK_StoryNPCBridge
             }
             InitializeAutonomyJournal();
         }
-        void SaveProfileForNativeSlot(FileStream stream)
+        void SaveProfileForNativeSlot(string filename)
         {
-            if (stream == null || ownedHeroine == null) return;
-            string saveDirectory = Path.GetFullPath(Path.Combine(Paths.GameRootPath, "UserData/save/game")).TrimEnd(Path.DirectorySeparatorChar);
-            if (!string.Equals(Path.GetDirectoryName(Path.GetFullPath(stream.Name)), saveDirectory, StringComparison.OrdinalIgnoreCase)) return;
-            string name = Path.GetFileName(stream.Name);
+            if (ownedHeroine == null || !IsStorySavePath(filename)) return;
+            string name = Path.GetFileName(filename);
             if (!string.Equals(storySaveName, name, StringComparison.OrdinalIgnoreCase))
             {
-                storySaveName = name; string directory = StoryProfileDirectory(name); Directory.CreateDirectory(directory);
+                storySaveName = name; string directory = StoryProfileDirectory(name);
                 ownedStatePath = Path.Combine(directory, "owned-actor.json"); newStoryProfile = false;
             }
-            SyncOwnedStats(); SaveNativeProfile(); SaveOwnedProfile(); FlushAutonomyJournal();
+            Directory.CreateDirectory(Path.GetDirectoryName(ownedStatePath));
+            SyncOwnedStats(); writingStorySidecars = true;
+            try { SaveNativeProfile(); SaveOwnedProfile(); FlushAutonomyJournal(); }
+            finally { writingStorySidecars = false; }
+            AddEvent("profile_save_completed", Json.Map("save", storySaveName, "key", storyProfileKey, "source", "native_story_save"));
         }
         object ReadStoryProfile()
-        { return Json.Map("save", storySaveName, "key", storyProfileKey, "initializedThisLoad", newStoryProfile, "scope", "story_save_slot"); }
+        { return Json.Map("save", storySaveName, "key", storyProfileKey, "initializedThisLoad", newStoryProfile, "scope", "story_save_slot", "savePolicy", "native_save_only"); }
     }
 }

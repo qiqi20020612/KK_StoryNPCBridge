@@ -80,6 +80,8 @@ namespace KK_StoryNPCBridge
         }
         object TriggerNativeEvent(Dictionary<string, object> command)
         {
+            if (AdvSequenceBusy && advSequence.Operation == "play_adv_motion")
+                throw new BridgeException("adv_sequence_busy", "Wait for or cancel the advanced ADV motion before triggering a native activity");
             object reference; if (!command.TryGetValue("event", out reference)) throw new BridgeException("invalid_argument", "event reference is required");
             int id = ReferenceId(reference, "native_event", NativeEventReference, delegate(string key) {
                 int index = Array.IndexOf(NativeEventKeys, key); return index < 0 ? int.MinValue : NativeEventIds[index];
@@ -201,7 +203,7 @@ namespace KK_StoryNPCBridge
         void FinishNativeEvent(string state, string error)
         {
             nativeEventRun.State = state; nativeEventRun.Error = error;
-            SyncOwnedStats(); nativeEventRun.Actual = CaptureNativeEventEffects(); SaveNativeProfile(); SaveOwnedProfile(); AddEvent("native_event_" + state, ReadNativeEventRun());
+            SyncOwnedStats(); nativeEventRun.Actual = CaptureNativeEventEffects(); AddEvent("native_event_" + state, ReadNativeEventRun());
         }
         void CancelPendingNativeEvent(string reason)
         { if (NativeEventBusy && !nativeEventRun.Applied) { FinishNativeEvent("cancelled", reason); if (!nativeEventRun.NewHost) RestoreNativeEventHost(); } }

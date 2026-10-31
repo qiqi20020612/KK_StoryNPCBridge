@@ -63,7 +63,6 @@ namespace KK_StoryNPCBridge
             try
             {
                 if (clear) ClearFaceOverride(); else { faceOverride = true; ApplyFace(ownedCha, ownedFace); }
-                SaveOwnedProfile();
             }
             catch
             {

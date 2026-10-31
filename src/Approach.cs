@@ -13,8 +13,10 @@ namespace KK_StoryNPCBridge
         int approachRouteMap = -1;
         bool Approaching { get { return approachState == "walking"; } }
         void AssignNativeResult(ActionControl.ResultInfo result)
+        { AssignNativeResult(ownedNpc.AI, result); }
+        static void AssignNativeResult(ActionGame.Chara.AI ai, ActionControl.ResultInfo result)
         {
-            object reactive = AccessTools.Field(typeof(ActionGame.Chara.AI), "actResult").GetValue(ownedNpc.AI);
+            object reactive = AccessTools.Field(typeof(ActionGame.Chara.AI), "actResult").GetValue(ai);
             reactive.GetType().GetProperty("Value").SetValue(reactive, result, null);
         }
         object WalkToPlayer()

@@ -11,11 +11,11 @@ namespace KK_StoryNPCBridge
 {
     public sealed partial class Plugin
     {
-        bool resumeNativePending, activityDirty, disposingOwned;
+        bool resumeNativePending, disposingOwned;
         int autonomousActionBeforeClaim = -1, omittedActivities;
         long activitySequence;
         string activityPeriodId, activityStartedUtc, activityReason, activitySignature;
-        float activityStartedAt, nextActivitySample, nextActivityFlush, nextResumeAttempt;
+        float activityStartedAt, nextActivitySample, nextResumeAttempt;
         Dictionary<string, object> activityStartState, lastActivityState, lastHandoverReport;
         readonly List<object> uncontrolledActivities = new List<object>();
         readonly Dictionary<string, object> activityCounts = new Dictionary<string, object>();
@@ -37,7 +37,7 @@ namespace KK_StoryNPCBridge
             activityPeriodId = Guid.NewGuid().ToString("N"); activityReason = reason;
             activityStartedUtc = DateTime.UtcNow.ToString("o"); activityStartedAt = Time.realtimeSinceStartup;
             uncontrolledActivities.Clear(); activityCounts.Clear(); omittedActivities = 0; activitySignature = null;
-            activityStartState = CaptureAutonomyState(); lastActivityState = activityStartState; activityDirty = true;
+            activityStartState = CaptureAutonomyState(); lastActivityState = activityStartState;
             AppendNativeActivity("period_started", Json.Map("reason", reason, "state", activityStartState));
         }
         Dictionary<string, object> CaptureAutonomyState()
@@ -60,7 +60,6 @@ namespace KK_StoryNPCBridge
             uncontrolledActivities.Add(entry);
             if (uncontrolledActivities.Count > 256) { uncontrolledActivities.RemoveAt(0); omittedActivities++; }
             object count; activityCounts.TryGetValue(kind, out count); activityCounts[kind] = count == null ? 1 : Convert.ToInt32(count) + 1;
-            activityDirty = true;
         }
         void RecordNativeSelection(ActionControl.ResultInfo result)
         {
@@ -144,7 +143,6 @@ namespace KK_StoryNPCBridge
                 resumeNativePending = false;
                 ClearNativePlanning(); nativeQueue.Clear(); activeTask = null;
                 if (!SceneBusy && Mode == "roaming" && ownedNpc != null && ownedNpc.AI != null) SetNativeIdle(); else stopOnRoam = true;
-                activityDirty = true; FlushAutonomyJournal();
                 AddEvent("controller_claimed", Json.Map("reportId", lastHandoverReport["reportId"], "summary", HandoverSummary()));
             }
             return ControlReply();
@@ -183,20 +181,13 @@ namespace KK_StoryNPCBridge
                 if (Time.realtimeSinceStartup >= nextActivitySample)
                 { nextActivitySample = Time.realtimeSinceStartup + .5f; SampleUncontrolledActivity(); }
             }
-            if (activityDirty && Time.realtimeSinceStartup >= nextActivityFlush) FlushAutonomyJournal();
         }
         void FlushAutonomyJournal()
         {
-            if (!activityDirty || string.IsNullOrEmpty(ownedStatePath)) return;
-            nextActivityFlush = Time.realtimeSinceStartup + 2;
-            try
-            {
-                string temp = ActivityPath + ".tmp";
-                File.WriteAllText(temp, Json.Stringify(Json.Map("schema", 1, "actor", ActorId, "currentPeriod", ownedController == null && activityPeriodId != null ? BuildActivityReport(false) : null, "lastReport", lastHandoverReport)));
-                if (File.Exists(ActivityPath)) File.Replace(temp, ActivityPath, null); else File.Move(temp, ActivityPath);
-                activityDirty = false;
-            }
-            catch (Exception e) { Logger.LogWarning("Activity journal write: " + e.Message); }
+            if (!writingStorySidecars || string.IsNullOrEmpty(ownedStatePath)) return;
+            string temp = ActivityPath + ".tmp";
+            File.WriteAllText(temp, Json.Stringify(Json.Map("schema", 1, "actor", ActorId, "currentPeriod", ownedController == null && activityPeriodId != null ? BuildActivityReport(false) : null, "lastReport", lastHandoverReport)));
+            if (File.Exists(ActivityPath)) File.Replace(temp, ActivityPath, null); else File.Move(temp, ActivityPath);
         }
     }
 }

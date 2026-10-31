@@ -101,12 +101,11 @@ namespace KK_StoryNPCBridge
         Dictionary<string, object> CommitOwnedStats(Dictionary<string, object> changes, Dictionary<string, object> before)
         {
             var eventsBefore = new HashSet<int>(ownedHeroine.talkEvent);
-            try { WriteNativeStats(changes); SyncOwnedStats(); SaveNativeProfile(); SaveOwnedProfile(); }
+            try { WriteNativeStats(changes); SyncOwnedStats(); }
             catch
             {
                 WriteNativeStats(before); ownedHeroine.talkEvent.Clear(); foreach (int id in eventsBefore) ownedHeroine.talkEvent.Add(id);
                 SyncOwnedStats();
-                try { SaveNativeProfile(); SaveOwnedProfile(); } catch (Exception e) { Logger.LogWarning("Attribute rollback persistence: " + e.Message); }
                 throw;
             }
             return new Dictionary<string, object>(ownedStats);
@@ -130,7 +129,7 @@ namespace KK_StoryNPCBridge
             fields.Add(Json.Map("key", "isFriend", "type", "boolean", "adjustable", false, "description", "Friendship talk-event marker 2."));
             fields.Add(Json.Map("key", "relation", "type", "reference", "adjustable", false, "description", "Relationship id, key or returned relationship object."));
             var relations = new List<object>(); for (int id = -1; id <= 2; id++) relations.Add(RelationshipReference(id));
-            return Json.Map("fields", fields, "relationships", relations, "adjustment", ReadStatAdjustmentPolicy(), "sceneRestricted", false, "ownershipRequired", true);
+            return Json.Map("fields", fields, "relationships", relations, "adjustment", ReadStatAdjustmentPolicy(), "sceneRestricted", false, "ownershipRequired", true, "savePolicy", "native_save_only");
         }
         static string StatDescription(string key)
         {

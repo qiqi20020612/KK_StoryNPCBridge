@@ -70,6 +70,7 @@ namespace KK_StoryNPCBridge
             if (op == "status" || op == "list") return Snapshot();
             if (op == "stat_catalog") return ReadStatCatalog();
             if (op == "time_catalog") return ReadTimeCatalog();
+            if (op == "clothing_catalog") return ReadClothingCatalog();
             if (op == "native_event_catalog") return ReadNativeEventCatalog();
             if (op == "sample_native_action") return SampleNativeAction();
             if (op == "catalog") return ReadCatalog();
@@ -83,6 +84,7 @@ namespace KK_StoryNPCBridge
             { if (ownedController == session) ReleaseOwned("disconnected", false); return Json.Map("disconnected", true); }
             if (Text(d, "target") != ActorId) throw new BridgeException("not_plugin_actor", "Only bridge:main can be controlled; saved NPCs are excluded");
             if (op == "get") return ReadOwnedActor();
+            if (op == "clothing_status") return ReadClothing();
             if (op == "native_interaction_status") return ReadNativeInteraction();
             if (op == "activity_report") return ReadActivityReport(d);
             if (op == "dialogue_status") return ReadDialogue();
@@ -92,6 +94,7 @@ namespace KK_StoryNPCBridge
             if (op == "expression_catalog") return ReadExpressionCatalog();
             if (op == "expression_presets") return ReadExpressionPresets();
             if (op == "animation_catalog") return ReadAnimationCatalog();
+            if (op == "adv_motion_catalog") return ReadAdvMotionCatalog(d);
             if (op == "spawn" || op == "despawn" || op == "respawn") throw new BridgeException("native_lifecycle", "Native NPC lifecycle is managed by story loading; reload the story to recreate her");
             object generation;
             if (!d.TryGetValue("generation", out generation) || !(generation is string)) throw new BridgeException("generation_required", "Use the current actor generation from get/list");
@@ -117,12 +120,13 @@ namespace KK_StoryNPCBridge
             if (NativeEventBusy) throw new BridgeException("native_event_busy", "Wait for the current native activity to finish");
             bool dialogueCommand = op.StartsWith("dialogue_", StringComparison.Ordinal) || op == "model_reply" || op == "model_error" || op == "say";
             bool visualCommand = op == "set_expression" || op == "clear_expression" || op == "play_animation";
-            bool talkCommand = op == "claim" || op == "say_native" || op == "play_adv_sequence" || dialogueCommand || visualCommand;
+            bool talkCommand = op == "claim" || op == "say_native" || op == "play_adv_sequence" || op == "play_adv_motion" || dialogueCommand || visualCommand;
             if (ownedNpc == null || ownedNpc.AI == null || SceneBusy && !(DialogueActive && dialogueCommand) || Mode != "roaming" && !(talkCommand && Mode == "talk")) throw new BridgeException("not_ready", "This command requires story roaming or the target's native conversation");
             if (op == "dialogue_reply") { if (Recovering) throw new BridgeException("controller_disconnected", "Wait for controller recovery"); return SubmitAdvInput(d); }
             RequireOwner(session);
             if (visualCommand && AdvSequenceBusy) throw new BridgeException("adv_sequence_busy", "Wait for or cancel the ADV sequence before changing visuals");
             if (op == "play_adv_sequence") return PlayAdvSequence(d);
+            if (op == "play_adv_motion") return PlayAdvMotion(d);
             if (op == "model_reply" || op == "model_error" || op == "dialogue_respond" || op == "dialogue_fail") return ReceiveExternalReply(d, op == "model_error" || op == "dialogue_fail");
             if (op == "say_native") { if (DialogueActive) throw new BridgeException("managed_dialogue", "Use model_reply or say in an active ADV conversation"); return SayNative(Text(d, "text")); }
             if (op == "dialogue_close" || op == "dialogue_retry" || op == "dialogue_request_input" || op == "dialogue_wait_model" || op == "dialogue_wait") return DialogueControl(op, d);

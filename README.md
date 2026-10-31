@@ -23,15 +23,18 @@ These targeting modes are planned features, not capabilities of the current vers
 ## Features
 
 - Read player names, native game periods, weekdays and explicit day-ending/day-start events.
+- Preserve native stage-based placement and clothing initialization while controlled, then hold at the new native destination and report the interrupted tasks and relocation result.
 - Read and modify native scores, relationships, club membership and promised-date flags in any scene, with actual native results returned.
 - Adjust numeric attributes by signed deltas, clamp to native ranges and return before/actual values; stable mutation IDs prevent duplicate application on retries.
 - Keep bridge progress independently for each story save; first creation starts with zero scores/counters and false exposed state flags.
 - Control expressions and body animation during roaming and native conversations.
+- Stage advanced native `CharaMotion` in a ready conversation with controller, IK and shake resources, live validation and restoration; keep lightweight `play_animation` for loaded states. See the [mechanism comparison and supported parameters](API.md#advanced-native-adv-motions).
+- Read the current native clothing coordinate type, including school, gym, swim, club, casual and pajama slots; clothing observation is read-only.
 - Schedule native actions immediately or queue the next tasks.
 - Observe native AI selections, reserved destinations and desire-weighted candidates; taking control returns the original planning snapshot before clearing native work.
 - Independently sample another native girl's current task as an anonymous behavior reference, with reusable action requests.
 - Walk to the player using native navigation, including cross-map routes.
-- Use native ADV dialogue with user input, external-response waiting, NPC-initiated invitations and long replies paginated at the equivalent of 60 Chinese characters or 100 ASCII characters per page.
+- Use native ADV dialogue with user input, external-response waiting, NPC-initiated invitations and long replies paginated against the actual native font and text rectangle, including wrapping of oversized words.
 - Play ordered text/narration, expressions, loaded motions and delays in the bridge's ready native conversation through `play_adv_sequence`, with progress, cancellation and recovery.
 - Control native blush, tear levels, gaze, highlights and facial opening limits, with live semantic presets such as `smile`, `shy` and `crying` resolved from the current model's morphs.
 - Report native dialogue choices and distinguish touch from look while preserving original body reactions.
@@ -63,12 +66,14 @@ Copy the single plugin DLL directly into the game's plugin directory:
 <Koikatu>/BepInEx/plugins/KK_StoryNPCBridge.dll
 ```
 
-No plugin subdirectory is needed. On first launch, the plugin creates:
+No plugin subdirectory is needed. The plugin uses these configuration and data paths:
 
 - `BepInEx/config/KK_StoryNPCBridge.cfg`: configuration and the local authentication token.
-- `BepInEx/config/KK_StoryNPCBridge/profiles/<save-key>/`: bridge-character data and activity journal for each story save slot.
+- `BepInEx/config/KK_StoryNPCBridge/profiles/<save-key>/`: bridge-character data and activity journal for each story save slot, first written when the native story is saved.
 
 The profile key is derived from the native save filename. Each slot first initializes exposed scores/counters to `0`, flags to `false`, and the relationship to `stranger` (`-1`, not met). Later loads retain that slot's bridge progress. Profiles are sidecar data and should be backed up with the story saves. Earlier unscoped profile files are left untouched and are not imported into every save.
+
+Bridge data follows the game's story saves. Changes and activity reports stay in memory until a successful native save (including native autosaves); Save As writes the destination slot. Attribute/expression edits, dialogue return, time changes, control release and shutdown do not independently write bridge files. Reloading or exiting without a native save discards unsaved bridge progress. The API exposes `profile.savePolicy='native_save_only'` and save-completion/failure events.
 
 ## UI language
 
@@ -129,6 +134,7 @@ with BridgeClient(game_root="<path-to-Koikatu>") as bridge:
 
 - [API reference](API.md) ([简体中文](API.zh-CN.md)): transport, commands, ownership, returned values, activity reports and dialogue events.
 - [ID reference](docs/REFERENCE.md) ([简体中文](docs/REFERENCE.zh-CN.md)): actions, maps, facial patterns and Animator states.
+- [1.5.0 changelog](docs/releases/1.5.0.md) ([简体中文](docs/releases/1.5.0.zh-CN.md)): changes since 1.4.0 and verified motion support limits.
 - `catalog`: the authoritative runtime catalog for the loaded game and character model.
 
 Documentation defaults to English, with Simplified Chinese editions available through the language links. API response descriptions, command names, field names and IDs remain English regardless of documentation or UI language.
@@ -147,7 +153,7 @@ The output is `artifacts/build/KK_StoryNPCBridge.dll`, targeting .NET Framework 
 To create the release DLL, installation ZIP and SHA-256 checksums:
 
 ```powershell
-pwsh -File tools/package-release.ps1 -Tag v1.4.0
+pwsh -File tools/package-release.ps1 -Tag v1.5.0
 ```
 
 GitHub Actions builds pushes and pull requests. Pushing a `v<version>` tag builds and publishes a release after checking that the tag matches the DLL version.

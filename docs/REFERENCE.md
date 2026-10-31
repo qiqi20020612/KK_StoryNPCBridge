@@ -4,7 +4,7 @@ English | [简体中文](REFERENCE.zh-CN.md)
 
 Reference mappings for the original Japanese release of Koikatu and the default female model (`ill_Default_Female`). Use the live `catalog` for the available IDs, model-specific patterns and current game conditions. Native morph identifiers are source data; English expression labels interpret those identifiers.
 
-[API command and reference input rules](../API.md). Callable references accept a returned object, its `key`, or its numeric `id` in the matching input domain. Game-time references are read-only. Queue tasks use the same action and map IDs; task IDs themselves are unique run identifiers.
+[API command and reference input rules](../API.md). Callable references accept a returned object, its `key`, or its numeric `id` in the matching input domain. Game-time and clothing references are read-only. Queue tasks use the same action and map IDs; task IDs themselves are unique run identifiers.
 
 ## Relationships
 
@@ -173,6 +173,20 @@ Use a map reference in task `map`. `automatic` (-1) asks the scheduler to choose
 | 65 | `map/65` | Park |
 | 66 | `map/66` | Church event |
 | 70 | `map/70` | Equipment storage |
+
+## Clothing types
+
+Read-only native coordinate slot IDs from `clothing_catalog` / `catalog.clothingTypes`. `actor.clothing` and `clothing_status` observe the actual loaded model; no changing operation is exposed. Slot categories do not identify individual garments or undressing state. See [current clothing type](../API.md#current-clothing-type) for availability and source details.
+
+| ID | Key | Native name | English meaning |
+| --- | --- | --- | --- |
+| 0 | `coordinate/0` | School01 | School uniform 1 |
+| 1 | `coordinate/1` | School02 | School uniform 2 |
+| 2 | `coordinate/2` | Gym | Gym outfit |
+| 3 | `coordinate/3` | Swim | Swimsuit |
+| 4 | `coordinate/4` | Club | Club outfit |
+| 5 | `coordinate/5` | Plain | Casual outfit |
+| 6 | `coordinate/6` | Pajamas | Pajamas |
 
 ## Expression patterns
 
@@ -416,6 +430,20 @@ Use `play_animation.state`. The signed ID is `Animator.StringToHash(key)` on lay
 | -1624975941 | `talk` | Conversation, speaking |
 | -1951916837 | `talk_uke` | Conversation, listening |
 | 1975430100 | `Toilet` | Using a toilet (Toilet) |
+
+## Native ADV motion resources
+
+`adv_motion_catalog` and `play_adv_motion` use an independent `motion` object. State hashes are local to the selected controller and are not scheduler IDs. Use returned `motions[].motion` or a full `request` template; retain `animation_catalog` / `play_animation` for already-loaded states. See [parameter support and the mechanism comparison](../API.md#advanced-native-adv-motions).
+
+Examples of native resources (availability is checked against the installed assets at call time):
+
+| State key | Visual meaning | Controller bundle / asset | Optional auxiliary pair |
+| --- | --- | --- | --- |
+| `Stand_08_00` | Standing ADV pose | `adv/motion/controller/adv/00.unity3d` / `cf_adv_00_00` | IK: `adv/motion/iklist/00.unity3d` / `cf_adv_00_00` |
+| `kyudo_05_1` | Sitting archery-related pose | `adv/motion/controller/adv/00.unity3d` / `cf_adv_suwari_00` | IK: `adv/motion/iklist/00.unity3d` / `cf_kyudo_05` |
+| `karaoke_sing_00` | Karaoke visual motion | `adv/motion/controller/event_301/20.unity3d` / `cf_EventCG_301` | Shake: `adv/motion/yurelist/20.unity3d` / `yure_EventCG_301` |
+
+Only native layer 0 is exposed. Override resource pairs and nonzero/multiple layers are unavailable. These motions do not create their corresponding scene, props, partner, navigation or gameplay effects. The catalog filters discovered candidates through native state checks and does not claim exhaustive discovery.
 
 ## Regenerating the reference
 

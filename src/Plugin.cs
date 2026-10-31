@@ -19,7 +19,7 @@ namespace KK_StoryNPCBridge
     [BepInProcess("Koikatsu Party.exe")]
     public sealed partial class Plugin : BaseUnityPlugin
     {
-        public const string Version = "1.4.0";
+        public const string Version = "1.5.0";
         public const string PluginGuid = "KK_StoryNPCBridge";
         public const string PluginName = "KK_StoryNPCBridge";
         public const int Protocol = 2;

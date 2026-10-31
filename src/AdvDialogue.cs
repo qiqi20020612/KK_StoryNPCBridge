@@ -217,7 +217,8 @@ namespace KK_StoryNPCBridge
             list.Add(ADV.Program.Transfer.Create(true, ADV.Command.CharaChange, "-2", "true"));
             if (text.Length > 0)
             {
-                foreach (string page in BeginAdvPages(text)) list.Add(ADV.Program.Transfer.Text(speaker == "player" ? Manager.Game.Instance.saveData.player.Name : "[H名]", page));
+                try { BeginAdvPages(); AddAdvText(list, speaker == "player" ? Manager.Game.Instance.saveData.player.Name : "[H名]", text); }
+                catch (Exception e) { PaginationFailed(e); return; }
                 if (speaker == "npc") { AddDialogueMessage("assistant", text); AddEvent("npc_dialogue", Json.Map("conversationId", dialogueId, "turn", dialogueTurn, "speaker", ownedName, "text", text, "channel", "native_adv")); }
             }
             else { list.Add(ADV.Program.Transfer.Create(true, ADV.Command.TextClear)); list.Add(ADV.Program.Transfer.Create(true, ADV.Command.WindowActive, "true", "1")); }
@@ -335,6 +336,7 @@ namespace KK_StoryNPCBridge
             ClearAdvControls();
             InterruptAdvSequence(reason, true);
             if (!DialogueActive || dialoguePhase == "ending") return;
+            advTextGroups.Clear();
             AddEvent("dialogue_ending", Json.Map("conversationId", dialogueId, "reason", reason));
             if (modelRequestId != null) AddEvent("dialogue_request_cancelled", Json.Map("conversationId", dialogueId, "requestId", modelRequestId, "reason", reason));
             modelRequestId = null; modelReceived = false; receivedModelText = null; queuedAdvText = null;
@@ -358,7 +360,7 @@ namespace KK_StoryNPCBridge
             npcInvitationPending = false;
             managedWait = null; advLineActive = false; releaseAdvHold = true; queuedAdvText = null; modelRequestId = null; modelReceived = false;
             nativeCommandMenusShown = false;
-            presentedPages.Clear(); displayPages.Clear(); presentedPageIndex = 0; nonBmpFallbacks = 0;
+            BeginAdvPages();
             SetDialoguePhase("closed"); AddEvent("dialogue_closed", Json.Map("conversationId", dialogueId, "reason", reason));
             if (!panelVisible) RestoreCursor();
         }

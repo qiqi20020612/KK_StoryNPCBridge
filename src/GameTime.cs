@@ -50,6 +50,7 @@ namespace KK_StoryNPCBridge
             int stage = (int)cycle.nowType;
             if (stage == observedStage) return;
             int before = observedStage; observedStage = stage;
+            RequestNativeRelocation(before, stage);
             if (stage != 0) newDayPending = false;
             AddEvent("game_stage_changed", Json.Map("world", world, "from", StageReference(before), "to", StageReference(stage), "time", ReadGameTime()));
             if (PeriodId(before) != PeriodId(stage))
@@ -68,7 +69,7 @@ namespace KK_StoryNPCBridge
             p.AddEvent("game_day_ended", Json.Map("world", p.world, "day", previous, "nextWeekday", WeekdayReference(next), "daysAdvanced", advanced, "reason", "native_calendar_advanced"));
             p.observedDayIndex += advanced; p.observedWeekday = next;
             p.newDayPending = true;
-            p.SyncOwnedStats(); p.SaveNativeProfile(); p.SaveOwnedProfile();
+            p.SyncOwnedStats();
             p.AddEvent("game_day_started", Json.Map("world", p.world, "day", p.ReadDay(), "previousWeekday", WeekdayReference(__state), "daysAdvanced", advanced));
         }
         object ReadDay()

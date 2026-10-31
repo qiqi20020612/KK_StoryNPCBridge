@@ -19,6 +19,8 @@ namespace KK_StoryNPCBridge
             internal Dictionary<string, object> FaceSnapshot;
             internal List<AdvSequenceSegment> Segments;
             internal object Actual;
+            internal string Operation = "play_adv_sequence", MotionRestore;
+            internal AdvMotionSnapshot MotionSnapshot;
             internal string EndTag { get { return "KKBridgeSequenceEnd_" + Id; } }
         }
         AdvSequenceRun advSequence;
@@ -26,7 +28,7 @@ namespace KK_StoryNPCBridge
         bool AdvSequenceQueued { get { return advSequence != null && advSequence.State == "queued"; } }
         void InstallAdvSequenceHooks()
         {
-            foreach (Type type in new Type[] { typeof(ADV.Commands.Chara.Expression), typeof(ADV.Commands.Chara.FixMouth), typeof(ADV.Commands.Chara.Motion), typeof(ADV.Commands.Base.Text), typeof(ADV.Commands.Base.Close) })
+            foreach (Type type in new Type[] { typeof(ADV.Commands.Chara.Expression), typeof(ADV.Commands.Chara.FixMouth), typeof(ADV.Commands.Chara.Motion), typeof(ADV.Commands.Base.Text), typeof(ADV.Commands.Base.Close), typeof(ADV.Commands.Base.Wait) })
                 PatchNative(type, "Do", Type.EmptyTypes, null, null, "AdvSequenceCommandFailed");
         }
         object ReadAdvSequence()
@@ -37,27 +39,34 @@ namespace KK_StoryNPCBridge
                 "target", ActorId, "generation", run.Generation, "world", run.World, "conversationId", run.Conversation,
                 "segment", run.Segment, "segmentCount", run.Segments.Count, "page", run.Page, "pageCount", run.PageCount,
                 "segments", segments, "reason", run.Reason, "error", run.Error, "requestedUtc", run.RequestedUtc, "startedUtc", run.StartedUtc, "endedUtc", run.EndedUtc,
-                "actual", run.Actual, "ownsDialogueSession", run.OwnSession);
+                "actual", run.Actual, "ownsDialogueSession", run.OwnSession, "operation", run.Operation, "motionRestore", run.MotionRestore);
         }
         object PlayAdvSequence(Dictionary<string, object> command)
+        {
+            RequireAdvSequenceReady();
+            return StartAdvSequence(ParseAdvSequence(command), "play_adv_sequence");
+        }
+        void RequireAdvSequenceReady()
         {
             if (AdvSequenceBusy) throw new BridgeException("adv_sequence_busy", "Wait for or cancel the current ADV sequence");
             if (!OwnedTalkActive || !NativeTalkReady(currentTalk) || !VisualActorReady)
                 throw new BridgeException("not_ready", "Open the bridge NPC's native_talk and wait for its menu before playing a sequence");
             if (NativeReactionActive || ExternalWaitVisible || DialogueActive && (WaitingModel || queuedAdvText != null || dialoguePhase != "ready" && dialoguePhase != "awaiting_input"))
                 throw new BridgeException("dialogue_busy", "Finish the current native reaction or dialogue request before playing a sequence");
-            var segments = ParseAdvSequence(command);
+        }
+        object StartAdvSequence(List<AdvSequenceSegment> segments, string operation)
+        {
             bool own = !DialogueActive;
             string after = own ? "ready" : dialoguePhase;
             if (own)
             {
                 InitializeDialogueSession(currentTalk.necessaryInfo != null && currentTalk.necessaryInfo.isAttack ? "npc" : "player", defaultModelTimeoutSeconds);
                 dialogueHostSeen = true;
-                AddEvent("dialogue_opened", Json.Map("conversationId", dialogueId, "channel", "native_adv", "initiator", dialogueInitiator, "source", "adv_sequence"));
+                AddEvent("dialogue_opened", Json.Map("conversationId", dialogueId, "channel", "native_adv", "initiator", dialogueInitiator, "source", operation == "play_adv_sequence" ? "adv_sequence" : operation));
             }
             else dialogueTurn++;
             advSequence = new AdvSequenceRun { Generation = ownedGeneration, World = world, Conversation = dialogueId,
-                Talk = currentTalk, Segments = segments, OwnSession = own, After = after };
+                Talk = currentTalk, Segments = segments, OwnSession = own, After = after, Operation = operation };
             StopNativeMenuActivity(currentTalk);
             QueueAdvLine("sequence", "", after); SetDialoguePhase("sequence_playing");
             AddEvent("adv_sequence_requested", ReadAdvSequence());
@@ -82,12 +91,13 @@ namespace KK_StoryNPCBridge
             if (command.args[4] == "segment")
             {
                 run.Segment = int.Parse(command.args[3]);
+                CaptureAdvMotionNative(run);
                 AddEvent("adv_sequence_segment_started", ReadAdvSequence());
             }
             else if (command.args[4] == "end")
             {
                 managedWait = command; advSawHold = true; lastHoldProcess = UnityEngine.Time.realtimeSinceStartup;
-                run.Actual = CaptureAdvSequenceVisuals();
+                run.Actual = run.MotionSnapshot == null ? CaptureAdvSequenceVisuals() : ReadAdvMotionActual(run);
                 if (run.OwnSession)
                 { run.State = "finishing"; releaseAdvHold = true; SetDialoguePhase("sequence_finishing"); }
                 else { FinishAdvSequence("completed", null, null); SetDialoguePhase(run.After); }
@@ -117,7 +127,8 @@ namespace KK_StoryNPCBridge
             if (!AdvSequenceBusy) return;
             var run = advSequence;
             run.State = state; run.Reason = reason; run.Error = error; run.EndedUtc = DateTime.UtcNow.ToString("o");
-            if (run.Actual == null) run.Actual = CaptureAdvSequenceVisuals();
+            if (run.Actual == null) run.Actual = run.MotionSnapshot == null ? CaptureAdvSequenceVisuals() : ReadAdvMotionActual(run);
+            RestoreAdvMotion(run);
             if (run.VisualsCaptured)
             {
                 if (run.Generation == ownedGeneration && !NativeEventBusy)
@@ -125,7 +136,7 @@ namespace KK_StoryNPCBridge
                 run.VisualsCaptured = false;
                 run.FaceActor = null; run.FaceSnapshot = null;
             }
-            AddEvent("adv_sequence_" + state, ReadAdvSequence());
+            AddEvent("adv_sequence_" + run.State, ReadAdvSequence());
         }
         void InterruptAdvSequence(string reason, bool jump)
         {

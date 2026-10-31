@@ -1,4 +1,4 @@
-# KK_StoryNPCBridge API 1.4.0
+# KK_StoryNPCBridge API 1.5.0
 
 [English](API.md) | 简体中文
 
@@ -11,7 +11,7 @@
 {"id":"2","op":"status"}
 ```
 
-成功回复格式为 `{ "id": "2", "ok": true, "result": ... }`。错误回复格式为 `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`。协议版本为 `2`，插件版本为 `1.4.0`。
+成功回复格式为 `{ "id": "2", "ok": true, "result": ... }`。错误回复格式为 `{ "id": "2", "ok": false, "error": { "code": "...", "message": "English description" } }`。协议版本为 `2`，插件版本为 `1.5.0`。
 
 认证和状态回复通过 `pluginName="KK_StoryNPCBridge"` 与 `pluginGuid="KK_StoryNPCBridge"` 标识插件。单个 DLL 直接安装为 `BepInEx/plugins/KK_StoryNPCBridge.dll`。
 
@@ -47,9 +47,13 @@ resume_token = recovered['resumeToken']  # 已轮换，旧 token 失效。
 
 `actor.profile` 提供 `save`、SHA-256 `key`、`scope='story_save_slot'` 和 `initializedThisLoad`。key 根据原生存档文件名生成，不区分大小写。外置文件位于 `BepInEx/config/KK_StoryNPCBridge/profiles/<key>/`：`owned-actor.json`、`owned-native.bin`、`activity-journal.json`。每个槽位首次创建时，数值／计数为 `0`、公开状态标志为 `false`、`relation=-1`；后续加载保留该槽位进度。归零不会清除引擎内部身份、角色卡和调度初始化数据。原生“另存为”成功后，当前桥接进度会写入目标槽位。请将外置文件与原生存档一起备份。旧版未分存档的数据会保留，不会自动导入每个槽位。
 
+`actor.profile.savePolicy='native_save_only'` 表示修改立即应用到原生内存，但三个桥接文件只在对应的原生故事保存流程成功后写盘，包含使用同一流程的原生自动保存。目标取自实际保存路径，因此“另存为”写入目标栏位。原生保存失败或开发用存档导出探针不会提交桥接文件。
+
+修改属性／表情、原生事件、结束对话、日期推进、交接控制权、定时采样、退出和重新读档本身均不独立保存桥接数据。新桥接数据文件首次在原生保存时创建。未保存的进度会在读档／退出时丢弃，除非游戏流程本身执行了原生保存。`profile_save_completed` 表示桥接文件全部写完；`profile_save_failed` 单独报告桥接文件 I/O 错误，不改变游戏自身的保存结果。应通过游戏再次保存来重试写盘，不要重放已应用的属性增量。插件没有独立保存接口。
+
 ## 目录与引用参数
 
-`catalog` 返回 `actions`、`maps`、`expressions`、`animations`、`stats`、`time`、`nativeEvents`、`idDomains`、`ui`、`generation` 和 `descriptionLanguage="en"`，无需持有控制权。目录根据当前加载的游戏安装内容发现。表情和动画要求有活动模型，可查看 `visualAvailable` 和 `visualContext`（`roaming`／`native_talk`）。进入或退出原生对话后应刷新视觉目录，对话使用独立模型／Animator。
+`catalog` 返回 `actions`、`maps`、`expressions`、`animations`、`stats`、`time`、`clothingTypes`、`nativeEvents`、`idDomains`、`ui`、`generation` 和 `descriptionLanguage="en"`，无需持有控制权。目录根据当前加载的游戏安装内容发现。表情和动画要求有活动模型，可查看 `visualAvailable` 和 `visualContext`（`roaming`／`native_talk`）。进入或退出原生对话后应刷新视觉目录，对话使用独立模型／Animator。
 
 每个离散目录项都包含整数 `id`、稳定的 `key`、英文 `name` 和英文 `description`，并按需提供原生来源名称或准确的形变目标。带有 `request`／`queueRequest` 的目录项包含当前角色 generation 的命令参数；接管角色后，可直接传给 `BridgeClient.request`。客户端会补充传输层请求 ID；直接使用 TCP 的调用方必须自行添加 `id`。这些请求不会自动接管角色。重新读取故事存档或加载其他角色模型后，应刷新目录。
 
@@ -107,7 +111,32 @@ bridge.request('set_expression', changes={'gaze': gaze}, **p)
 
 预设为 `neutral`、`smile`、`shy`、`crying`、`angry`、`surprised`。在 `changes.preset` 中传入语义 key 或返回条目，显式字段覆盖解析结果。它们组合当前模型的眉／眼／嘴形变及开合、脸红、泪水、高光和视线。`surprised` 会显式固定嘴部，其他预设解除固定。条目包含可复用的 `changes`、准确的 `patterns` 和可执行 `request`。模式 ID 按实时形变标签解析，不使用固定数字；缺失／含糊的必需形变或不可用参数会使预设不可用，调用时在修改任何状态前返回 `preset_unavailable`。原有动态模式选择仍可使用。
 
-`set_expression` 保留已有模式引用，返回实际原生 `expression`、带说明的 `expressionDetails`（含视线）及模式数量 `expressionLimits`。整批参数先验证再应用。省略的额外字段保留已有覆盖或原生值，覆盖保存到故事档案。`clear_expression` 删除覆盖，恢复模型上捕获的覆盖前额外参数，并将表情管理交回游戏；释放控制、原生活动接管及模型变化也会恢复这些值，包括嘴部固定状态。缺少着色器／控制器／泪水网格以及不支持的上下文会明确上报不可用，不提供模拟效果。
+`set_expression` 保留已有模式引用，返回实际原生 `expression`、带说明的 `expressionDetails`（含视线）及模式数量 `expressionLimits`。整批参数先验证再应用。省略的额外字段保留已有覆盖或原生值，覆盖在下次原生保存成功后写入故事档案。`clear_expression` 删除覆盖，恢复模型上捕获的覆盖前额外参数，并将表情管理交回游戏；释放控制、原生活动接管及模型变化也会恢复这些值，包括嘴部固定状态。缺少着色器／控制器／泪水网格以及不支持的上下文会明确上报不可用，不提供模拟效果。
+
+### 当前穿着类型
+
+`get`、`status`、`list` 和订阅快照中的 `actor.clothing` 提供当前穿着观测。`clothing_status` 只需 `target` 即可返回同一对象，无需控制权和 `generation`。`clothing_catalog` 及 `catalog.clothingTypes` 提供原生穿着栏位说明，无需 target。所有穿着数据只读，不提供更换命令或可执行的换装请求。
+
+```python
+clothing = bridge.request('clothing_status', target='bridge:main')
+if clothing['available']:
+    print(clothing['type']['id'], clothing['type']['key'], clothing['type']['name'])
+types = bridge.request('clothing_catalog')
+```
+
+观测包含 `available`、`unavailableReason`、`readOnly=true`、`source='native_model'`、`nativeField='ChaControl.fileStatus.coordinateType'`、`context`（`roaming`、`native_talk` 或 `native_scene`）及 `type` 引用。引用包含 `id`、`key`、英文 `name`／`description`、原生枚举 `nativeName`、`known` 及 `readOnly=true`。
+
+| ID | Key | 原生名称 | 含义 |
+| --- | --- | --- | --- |
+| 0 | `coordinate/0` | `School01` | 校服 1 |
+| 1 | `coordinate/1` | `School02` | 校服 2 |
+| 2 | `coordinate/2` | `Gym` | 体操服 |
+| 3 | `coordinate/3` | `Swim` | 泳装 |
+| 4 | `coordinate/4` | `Club` | 社团服 |
+| 5 | `coordinate/5` | `Plain` | 私服 |
+| 6 | `coordinate/6` | `Pajamas` | 睡衣 |
+
+读取的是活动模型实际使用的原生栏位，原生对话使用其独立模型。不会根据外观识别服饰，也不列出单件衣物或部分脱衣状态；角色卡可向任意栏位配置不同衣物。不会使用调度器的 `Heroine.NowCoordinate` 或旧缓存代替实际值。故事／模型未就绪或正在切场景时，`available=false`，`type`、`source`、`context` 为 null，原因包括 `story_not_ready`、`model_not_loaded`、`scene_transition`。未知的实际栏位 ID 会保留并标记 `known=false`。穿着编号与 `change_clothes` 等调度行动编号属于不同领域。
 
 ### 原生任务与地图
 
@@ -182,6 +211,53 @@ bridge.request('play_animation', state=idle['id'], **p)
 
 播放 `Reading` 不会自动寻找座位、添加书本道具或执行行动 `9`。需要原生游戏行为时，应使用调度行动。实时动画状态通过 `animationDetails` 描述；`animation.state`／哈希返回实际播放状态，`requestedState` 表示显式设置的覆盖状态。
 
+### 高级原生 ADV 动作
+
+`play_adv_motion` 是独立的临时视觉操作，仅用于桥接角色**已就绪的原生 TalkScene**，通过现有演出执行器构建原生 `ADV.CharaMotion` 命令。需要持有角色控制权及当前 generation。它不会开启会话、执行调度行动、添加道具或调用外部模型。`play_animation`、`animation_catalog` 及普通演出片段中仅选择已加载状态的 `motion` 字段保持原义。
+
+| 机制 | 场景 | 资源与效果 | 持续方式 |
+| --- | --- | --- | --- |
+| `play_animation` / `Animator.Play` | 漫游或原生对话 | 播放当前 Animator 第 0 层的状态，不加载控制器、IK 或摇晃数据 | 沿用显式动画覆盖，直到停止／替换／交还控制 |
+| `play_adv_motion` / 原生 `CharaMotion` | 已就绪的桥接角色 TalkScene | 可加载控制器、原生 IK 和摇晃／身体修正数据，再选择状态 | 等待一次原生延迟后恢复原有动画及辅助状态 |
+
+操作沿用当前原生镜头及角色站位。将坐姿、卧姿或专用事件动作放进站立对话机位时，部分身体可能落到画面外。接口不会自动重新构图，也不会加载来源事件的配套布景；动作有效不代表在任意 TalkScene 中都有合适的画面构图。
+
+`motion` 对象使用下列**区分大小写的 API 键名**。原生命令字段列供对照；大写开头的字段名不是 API 别名。
+
+| 原生字段 | API 键 | 支持情况 |
+| --- | --- | --- |
+| State | `state` | 必填状态名称，由 `Animator.HasState(0, hash)` 验证 |
+| Bundle / Asset | `bundle` / `asset` | 可选资源对，指定已安装的 `RuntimeAnimatorController`；省略时使用当前控制器 |
+| IKBundle / IKAsset | `ikBundle` / `ikAsset` | 可选资源对，指定原生 IK `TextAsset`；须包含所选状态，且不依赖其他参演角色的修正数据 |
+| ShakeBundle / ShakeAsset | `shakeBundle` / `shakeAsset` | 可选资源对，指定原生 `YureExcel`；须包含所选状态 |
+| OverrideBundle / OverrideAsset | `overrideBundle` / `overrideAsset` | 暂不开放，返回 `unsupported_control`。已观察到原生创建覆盖控制器，但尚未确认实际动画片段替换 |
+| LayerNo | `layerNo` | 仅支持整数 `0`，默认也为 0；非零层及多层列表暂不开放 |
+
+Bundle 路径相对于 `abdata`，使用正斜杠并以 `.unity3d` 结尾。每对资源字段须同时提供或同时为空。省略资源对时不加载新数据，但原生状态选择仍可能启用／禁用已有 IK，或应用已有／默认摇晃数据。全部字段、资源类型、状态匹配和时长在执行前验证；未知字段和不支持的控制会明确拒绝，不会悄悄忽略。
+
+`adv_motion_catalog` 是只读接口，要求桥接角色的对话模型已加载。可选 `motion` 对象指定要检查的控制器／IK／摇晃资源。`motions[]` 返回匹配状态名称、有符号哈希、可复用的 `motion` 对象及完整 `request` 模板；`parameters` 说明支持范围。候选名称来自片段名、IK／摇晃条目和实时动画目录，再经过 `HasState` 筛选。`discoveryComplete=false` 表示 Unity 无法在运行时穷举状态名称；可提供已知 `motion.state` 补充检查。不同控制器的 ID 和片段名称不能直接互换。
+
+```python
+catalog = bridge.request('adv_motion_catalog', target='bridge:main', motion={
+    'bundle': 'adv/motion/controller/adv/00.unity3d',
+    'asset': 'cf_adv_suwari_00',
+    'ikBundle': 'adv/motion/iklist/00.unity3d',
+    'ikAsset': 'cf_kyudo_05',
+})
+entry = next(x for x in catalog['motions'] if x['key'] == 'kyudo_05_1')
+run = bridge.request(**entry['request'])  # 默认 durationSeconds=3。
+# 也可：bridge.request('play_adv_motion', motion=entry['motion'],
+#                      durationSeconds=2, **p)
+state = bridge.request('adv_sequence_status', target='bridge:main')
+# 取消时使用 cancel_adv_sequence 和 run['sequenceId']。
+```
+
+`durationSeconds` 范围为 0.1–30，默认 3，采用可被正常 ADV 翻页跳过的原生等待。进度、完成、取消及失败复用 `adv_sequence_status`、`cancel_adv_sequence` 和 `adv_sequence_*` 事件，返回 `operation='play_adv_motion'` 和无文字的 `segments[].nativeMotion`。`running` 表示原生列表已提交，`segment=1` 表示已进入动作片段。不会创建台词／历史记录或外部回复请求。并发演出、直接视觉修改及原生活动触发返回 `adv_sequence_busy`，须等待或先取消。
+
+完成报告中的 `actual` 在恢复前捕获演出控制器、状态哈希、片段名／权重、IK 启用状态／状态名、实际动态骨骼开关及身体修正掩码。`motionRestore='restored'` 表示已恢复原控制器、各层状态／时间／权重、数值和布尔 Animator 参数、播放速度、原生 IK 数据／开关，以及摇晃数据和物理开关；既有手动视觉覆盖继续生效。不重放 Trigger 参数或正在进行的 Animator 状态过渡，而是恢复所捕获的当前状态。资源选择不会保存进桥接存档。
+
+已有的空闲托管对话在完成后恢复原状态；临时会话则脱离并回到原生菜单。意外断线在原生标记／延迟处暂停，沿用令牌恢复，不重放动作。取消、原生执行错误、交还控制和场景切换会丢弃剩余工作。`motionRestore='host_changed'` 表示避免向已替换的宿主／世界写入；恢复异常返回 `state='failed'`、`reason='motion_restore_failed'` 和 `motionRestore='failed'`。`say`、`say_native`、普通演出动作及原生游戏行动继续使用原有路径。
+
 ## 原生属性与关系
 
 `stat_catalog`（也包含于 `catalog.stats`）返回字段类型、写入范围、`adjustable`、英文含义、`relationships` 及 `adjustment` 策略。`actor.stats` 是实际原生值，`actor.relationship` 是附说明的关系引用。原生效果可能产生超出接口写入范围的值（例如负数生气值）；观测与桥接存档进度会保留这些实际值。`set_stats.changes` 在修改前验证全部字段，写入原生状态后重新读取，并返回完整角色。`stats_changed` 包含 `requested`、`before` 和 `actual`。两种属性操作都要求当前故事角色存在、调用方持有控制权和当前 generation，不限制漫游／ADV／地图／模型状态。
@@ -217,7 +293,7 @@ assert actual['stats']['relation'] == 1
 
 `adjust_stats` 接受非空 `deltas` 对象和调用方生成的 `mutationId`。上表中仅八个整数分数／计数字段支持增量（`adjustable=true`）；关系和布尔标志仍通过 `set_stats` 绝对赋值。每个增量须为 -2147483648 至 2147483647 的整数；布尔值、字符串、小数和未知字段会在写入前被拒绝。可直接使用 `stat_catalog` 返回的字段 `key` 作为 `deltas` 的键。
 
-操作先读取当前原生值，以 64 位整数累加，再将结果限制到该字段的写入范围：分数为 0–100，计数为 0–2147483647；即使起始观测值超出该范围，也按此处理最终值。复用 `set_stats` 的验证／规范化、原生同步、外置数据保存和整批失败回滚，包括原生 talk-event 标记。所有字段基于同一份快照计算，在 Unity 主线程同步提交。与 `set_stats` 一样，I/O 故障时回滚后的外置文件保存仍为尽力恢复。
+操作先读取当前原生值，以 64 位整数累加，再将结果限制到该字段的写入范围：分数为 0–100，计数为 0–2147483647；即使起始观测值超出该范围，也按此处理最终值。复用 `set_stats` 的验证／规范化、原生同步和整批内存失败回滚，包括原生 talk-event 标记。所有字段基于同一份快照计算，在 Unity 主线程同步应用。与 `set_stats` 一样，写盘延后到原生故事保存成功后；`stat_catalog.savePolicy` 为 `native_save_only`。
 
 `set_stats` 继续执行绝对赋值，越界值仍被拒绝。增量修改 `anger` 沿用 `isAnger = 实际 anger > 0` 的既有推导；不会新增情绪评分、修改关系规则，也不会在好感度满值后转加亲密度。
 
@@ -247,7 +323,7 @@ assert retry['replayed'] is True  # 返回首次结果，不会再次累加。
 
 `mutationId` 是区分大小写、非空白且最长 128 字符的字符串，与 TCP 请求 `id` 不同，可使用 UUID。同一 ID 和规范化后相同的字段／增量会返回首次结果，不受字段顺序、后续写入、正常释放后重新接管或认证后 `resume` 影响。同一 ID 改用其他增量返回 `adjustment_conflict`。重放前仍检查控制权、当前故事和 generation；超时重试保留原 ID 与增量，重连后先恢复或接管控制。客户端不会自动生成替代 ID，也不会自动重试。
 
-记录保留在当前角色 generation 的内存中，不跨故事重建／游戏重启；这些操作会产生新 generation 并拒绝旧命令。最多保留 4096 次开始执行的记录，不淘汰旧记录；达到上限时，新 ID 在写入前返回 `adjustment_limit`，旧 ID 仍可查询。输入验证失败不记入记录；开始执行后失败则记录为 `adjustment_failed`，同一 ID 只会返回相同错误，不再执行。应先用 `get` 检查状态并排除故障，再有意使用新 ID，防止回滚／保存结果不明确时自动重复累加。
+记录保留在当前角色 generation 的内存中，不跨故事重建／游戏重启；这些操作会产生新 generation 并拒绝旧命令。最多保留 4096 次开始执行的记录，不淘汰旧记录；达到上限时，新 ID 在写入前返回 `adjustment_limit`，旧 ID 仍可查询。输入验证失败不记入记录；开始执行后失败则记录为 `adjustment_failed`，同一 ID 只会返回相同错误，不再执行。应先用 `get` 检查状态并排除故障，再有意使用新 ID，防止执行／回滚结果不明确时自动重复累加。之后发生的桥接文件保存错误不会重新应用或撤销已确认的增量。
 
 ## 玩家与原生游戏时间
 
@@ -268,6 +344,14 @@ assert retry['replayed'] is True  # 返回首次结果，不会再次累加。
 
 这些事件的 `target=null`、`generation=null`。初次加载只建立基线，不宣告完成了一天；进入夜晚与真正推进日历是不同事件。`available=false`／`day=null` 表示尚未建立就绪故事的时间基线。
 
+## 原生时间段重定位
+
+桥接角色受控时，原生阶段切换会等待游戏自己的世界初始化流程。原生初始行动可以分配新地图、位置、朝向和穿着；完成初始化后，桥接角色在该原生落点等待，后续任务仍由插件决定。玩家普通换地图本身不会请求这次重定位，不使用固定地图／坐标表或瞬移接口。
+
+执行重定位时，以 `native_stage_changed` 原因中断旧的直接移动、靠近、当前／排队任务、跟随及对话／活动状态，不把旧任务报告为完成。控制权和断线恢复预留保持不变；场景稳定后捕获当前地图／穿着，并将 `restorePosition` 基准更新为新的原生落点。断线等待期间，重定位后仍保持暂停。行动日志中的移动仍只记录地图变化。
+
+`actor.nativeRelocation` 保留最近报告：`relocationId`、来源 generation／world、`state`（`pending`、`initializing`、`waiting_scene`、`completed`、`cancelled`、`failed`）、`fromStage`／`toStage`、来源／目标地图引用、终止时的 `actual` 地图／穿着及 `error`。生命周期事件为 `native_relocation_requested`、`native_relocation_completed`、`native_relocation_cancelled`、`native_relocation_failed`。原生初始化前连续发生的阶段切换可合并。完成通知在实际原生落点处理后发送，与较早的 `game_stage_changed`／`game_time_period_changed` 分开。
+
 ## 命令
 
 除非另有说明，角色命令需要 `target`；写入命令还需要 `generation`，并要求当前连接持有控制权。
@@ -279,6 +363,8 @@ assert retry['replayed'] is True  # 返回首次结果，不会再次累加。
 | `subscribe` | 为当前连接启用快照推送；关闭连接即可停止 |
 | `status`／`list` | 世界、玩家、一个桥接角色、事件、英文说明语言及所配置的 UI 语言 |
 | `get` | 角色对象，包含完整 `activityReport` 和当前编号的说明 |
+| `clothing_status` | 当前原生穿着类型观测；需要 target，无需控制权／generation |
+| `clothing_catalog` | 只读的原生穿着栏位引用；无需 target |
 | `catalog` | 所有运行时编号目录；无需 target 或控制权 |
 | `native_actions` | 角色的完整原生行动目录 |
 | `native_plan` | 只读的当前原生规划与接管前快照，无需控制权 |
@@ -307,6 +393,8 @@ assert retry['replayed'] is True  # 返回首次结果，不会再次累加。
 | `adjust_stats` | 稳定的 `mutationId` 和整数 `deltas`；原子地累加／限制数值字段，返回前后实际值并防止重复应用 |
 | `set_expression`／`clear_expression` | 设置上述表情引用和控制参数／清除覆盖 |
 | `play_animation` | `state` 引用、原始状态 key 或有符号状态哈希 |
+| `adv_motion_catalog` | 可选 `motion` 资源对象；只读发现原生对话动作，无需控制权／generation |
+| `play_adv_motion` | 原生 `motion` 资源对象，可选 `durationSeconds`（0.1–30）；临时高级对话动作 |
 | `native_talk` | 开启原生对话场景；实际的原生对话／菜单仍可使用 |
 | `native_event_catalog` | 原生事件效果、可用性及可直接调用的引用；无需 target |
 | `trigger_native_event` | `event` 对象／key／ID；直接执行效果，返回执行状态、实际属性与跟随绑定 |
@@ -387,9 +475,11 @@ bridge.request('set_waiting_indicator', visible=False, **p)
 
 触碰／注视事件包含 `interactionId`、`kind`、`nativeMode`、`region`、语音／姿势数据和生命周期。`nativeMode=0` 表示触碰，`1` 表示注视。原生语音、动画和计数照常执行。反应结束后，外部应用可以显式调用带 `afterInteractionId` 的 `say` 或 `dialogue_open`；插件不会自动创建对话请求。
 
-外部提供的回复通过原生 ADV 分页显示，每页额度等价于 **60 个汉字或 100 个 ASCII 字符**。以 ASCII 开头的 Unicode 文本元素占 3 个宽度单位，其余文本元素占 5 个；因此英文字母、数字、半角空格和半角标点占 3 个，汉字、全角标点及其他非 ASCII 文本元素占 5 个。中英混排共用每页 300 单位的额度，例如 30 个汉字加 50 个英文字母。若加入下一个文本元素会超出额度，则将整个元素放到下一页，分页步骤不拆开组合字符序列或代理对。换行也会结束当前页。托管回复最多接受 4000 个 UTF-16 代码单元。无论分成几页，历史和 `npc_dialogue` 中只记录一次完整原文。
+外部回复使用**原生排版分页**，单页没有固定字数上限。显示前，桥接在不可见的测量副本上，结合原生格式器和 Unity TextGenerator，读取当前原生字体、字号、行距、画布比例及文本区域进行测量；可用边缘内缩两个 UI 单位。分页优先选择附近的标点／词语边界，宽于一行的单词按文本元素断行。显式换行占用可用行数，不再一律另起一页。识别的原生 `b`、`i`、`color`、`size`、`material` 格式作用域在页间关闭／重新打开。托管回复仍最多接受 4000 个 UTF-16 代码单元；无论显示几页，历史和 `npc_dialogue` 都只记录一次完整原文。
 
-`dialogue.pagination` 返回 `page`、`pageCount`、`maxCharacters=100`（文本元素数量的绝对上限）、`maxCjkCharacters=60`、`maxWidthUnits=300`、`countUnit='weighted_text_element'`、`asciiWidthUnits=3`、`nonAsciiWidthUnits=5` 和 `nonBmpFallbacks`。每个 `dialogue_page` 事件包含相同的限额／计数元数据，以及 `conversationId`、`turn`、从 1 开始的 `page`、`pageCount`、原文页 `text` 和实际 `displayText`。这些是单页显示限额，不会缩减整条回复允许的最大长度。原生自动换行对异常长、没有空格的 ASCII 连续字符串仍可能横向溢出。
+`dialogue.pagination` 返回 `mode='native_layout'`、已显示的页号 `page`（从 1 开始，初始为 0）、`pageCount`、`pageCountEstimated`、`layoutRevision`、`layout` 和 `nonBmpFallbacks`。`layout` 包含 `width`、`height`、`availableWidth`、`availableHeight`、`font`、`fontSize`、`lineSpacing`、`pixelsPerUnit`；尺寸使用原生局部 UI 单位，第一页出现前为 null。原生菜单可能卸载 ADV 宿主，因此排队文字最初每个片段暂计一页；`pageCountEstimated=true` 表示还有未在实际宿主上测量的片段。预计页数在首次显示时更新，也会随字体／文本区域变化后剩余文字的重新排版而更新。`layoutRevision` 在片段被测量或重排时增加。页数不是固定的完成信号，应使用对话／演出完成状态及事件。
+
+每个 `dialogue_page` 在原生 Text 命令显示时发送，包含这些元数据、`conversationId`、`turn`、分页来源 `text` 及实际断行后的 `displayText`。显示来源会展开原生变量，调用方文字在完整回复记录中保持不变；添加的换行／格式作用域及补充字符显示回退均不修改完整记录。原生几何或字体参数变化后，剩余页在显示前重新测量；已显示文字沿用原生 UI 的尺寸变化行为。接口不再返回旧的固定限额／宽度单位字段。没有桥接分页标记的普通原生台词继续使用游戏格式器。原生布局不可用，或单个文本元素／格式无法容纳时，`dialogue_pagination_failed` 报告错误，并使用已有对话／演出清理流程，诊断文字不会进入 ADV。
 
 Unity 5 的原生打字机无法安全测量补充平面 Unicode 字符（如 Emoji），仅在原生显示时将每个此类字符替换为 `□`，接口历史和分页原文仍完整保留。`nonBmpFallbacks` 返回整条回复的替换次数。无效的未配对 UTF-16 代理项会在显示前被拒绝。
 
@@ -403,7 +493,7 @@ Unity 5 的原生打字机无法安全测量补充平面 Unicode 字符（如 Em
 
 | 字段 | 输入／行为 |
 | --- | --- |
-| `text` | 可选文字，每段最多 4000、整批最多 8000 个 UTF-16 代码单元；沿用 60 汉字／100 ASCII 分页及 Unicode 显示回退 |
+| `text` | 可选文字，每段最多 4000、整批最多 8000 个 UTF-16 代码单元；使用共享的原生排版分页及 Unicode 显示回退 |
 | `speaker` | `npc`（默认）、`player` 或 `narrator`；旁白不显示姓名。提供的玩家台词属于脚本文字，不触发输入／模型请求 |
 | `expression` | 与 `set_expression.changes` 相同，含 `preset` 及额外参数；原生 CharaExpression 和可选 CharaFixMouth 保留未指定字段 |
 | `motion` | 当前 TalkScene 的 `animation_catalog` 动画对象、key 或状态哈希；使用已加载的 Animator，不更换控制器／资源 |

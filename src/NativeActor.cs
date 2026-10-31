@@ -36,10 +36,13 @@ namespace KK_StoryNPCBridge
             PatchNative(typeof(SaveData), "Load", new Type[] { typeof(string), typeof(string) }, null, "SaveLoaded", null);
             PatchNative(typeof(ActionControl), "Init", Type.EmptyTypes, "BeforeActionInit", null, null);
             PatchNative(typeof(ActionControl), "FirstAction", new Type[] { typeof(SaveData.Heroine) }, null, "FirstNativeAction", null);
+            PatchNative(typeof(AI), "FirstAction", Type.EmptyTypes, null, "NativePlacementSelected", null);
+            PatchNative(typeof(ActionScene), "SetAllCharaActive", new Type[] { typeof(bool) }, "BeforeNativeWorldPlacement", null, "AfterNativeWorldPlacement");
             PatchNative(typeof(ActionControl), "NextAction", new Type[] { typeof(SaveData.Heroine), typeof(int[]) }, "NextNativeAction", "NativeActionSelected", null);
             PatchNative(typeof(AI), "ArrivalSet", new Type[] { typeof(ActionControl.ResultInfo) }, null, "NativeArrived", null);
             PatchNative(typeof(ActionScene), "_SceneEvent", new Type[] { typeof(ActionGame.Chara.Base) }, null, "TrackNativeTalk", null);
             PatchNative(typeof(SaveData), "<Save>m__3", new Type[] { typeof(FileStream) }, "BeforeNativeSave", null, "AfterNativeSave");
+            PatchNative(typeof(SaveData), "Save", new Type[] { typeof(string), typeof(string) }, "BeforeStorySave", null, "AfterStorySave");
             PatchNative(typeof(ActionControl), "Save", new Type[] { typeof(BinaryWriter) }, "BeforeDesireSave", null, "AfterDesireSave");
         }
         void PatchNative(Type type, string name, Type[] args, string prefix, string postfix, string finalizer)
@@ -55,7 +58,6 @@ namespace KK_StoryNPCBridge
         static void BeforeNativeSave(SaveData __instance, FileStream __0, ref List<SaveData.Heroine> __state)
         {
             if (Current == null || __instance != Current.ownedSave || Current.ownedHeroine == null) return;
-            Current.SyncOwnedStats(); Current.SaveNativeProfile(); Current.SaveOwnedProfile();
             __state = __instance.heroineList;
             __instance.heroineList = new List<SaveData.Heroine>(__state);
             __instance.heroineList.Remove(Current.ownedHeroine);
@@ -64,9 +66,9 @@ namespace KK_StoryNPCBridge
         {
             if (__state == null) return;
             __instance.heroineList = __state;
-            if (Current == null || __exception != null) return;
-            try { Current.SaveProfileForNativeSlot(__0); }
-            catch (Exception e) { Current.Logger.LogWarning("Story profile save: " + e.Message); Current.AddEvent("profile_save_failed", Json.Map("save", Path.GetFileName(__0.Name), "error", e.Message)); }
+            var scope = Current == null ? null : Current.nativeStorySave;
+            if (__exception == null && scope != null && ReferenceEquals(scope.Save, __instance) &&
+                string.Equals(scope.Path, Path.GetFullPath(__0.Name), StringComparison.OrdinalIgnoreCase)) scope.Serialized = true;
         }
         static void BeforeDesireSave(ActionControl __instance, ref IDictionary __state)
         {
@@ -83,7 +85,7 @@ namespace KK_StoryNPCBridge
         string NativeProfilePath { get { return Path.Combine(Path.GetDirectoryName(ownedStatePath), "owned-native.bin"); } }
         void SaveNativeProfile()
         {
-            if (ownedHeroine == null || ownedSave == null) return;
+            if (!writingStorySidecars || ownedHeroine == null || ownedSave == null) return;
             string temp = NativeProfilePath + ".tmp";
             using (var stream = File.Create(temp)) using (var writer = new BinaryWriter(stream))
             { writer.Write(SaveData.Version.ToString()); ownedHeroine.Save(writer); }
@@ -122,8 +124,8 @@ namespace KK_StoryNPCBridge
             if (save == null || save.player == null) return;
             if (ownedSave == save && ownedHeroine != null && save.heroineList.Contains(ownedHeroine)) return;
             if (!Manager.Character.IsInstance()) return;
-            if (ownedHeroine != null) { SyncOwnedStats(); SaveNativeProfile(); SaveOwnedProfile(); FlushAutonomyJournal(); }
             ClearControlRecovery();
+            ResetNativeRelocation();
             if (DialogueActive) ResetAdvDialogue("world_changed");
             SelectStoryProfile();
             ownedController = null; ownedNpc = null; ownedRoot = null; ownedCha = null; ownedAgent = null;
@@ -152,10 +154,10 @@ namespace KK_StoryNPCBridge
             heroine.schoolClass = save.player.schoolClass; heroine.schoolClassIndex = seat;
             ownedHeroine = heroine; ownedSave = save;
             if (!File.Exists(NativeProfilePath)) ApplyOwnedStats();
-            SyncOwnedStats(); SaveOwnedProfile(); SaveNativeProfile();
+            SyncOwnedStats();
             save.heroineList.Add(heroine);
             ownedGeneration = Guid.NewGuid().ToString("N");
-            ResetAdvRecords(); ClearAdvControls();
+            ResetAdvRecords(); ClearAdvControls(); BeginAdvPages();
             nativeEventRun = null; ownedNativeFollow = false;
             AddEvent("actor_initialized", Json.Map("profile", ReadStoryProfile(), "stats", new Dictionary<string, object>(ownedStats)));
             nativeQueue.Clear(); activeTask = null; initialSummonPending = false; approachState = "none";
@@ -167,12 +169,13 @@ namespace KK_StoryNPCBridge
         static void FirstNativeAction(ActionControl __instance, SaveData.Heroine __0, ref ActionControl.ResultInfo __result)
         {
             if (Current == null || !Current.IsOwned(__0)) return;
-            if (Current.ownedController != null) __result = Current.NativeIdle(__instance, __result);
+            if (Current.ownedController != null)
+            { if (!Current.nativeWorldPlacement) __result = Current.NativeIdle(__instance, __result); }
             else Current.RecordNativeSelection(__result);
         }
         static bool NextNativeAction(ActionControl __instance, SaveData.Heroine __0, ref ActionControl.ResultInfo __result)
         {
-            if (Current == null || !Current.IsOwned(__0) || Current.ownedController == null) return true;
+            if (Current == null || !Current.IsOwned(__0) || Current.ownedController == null || Current.nativeWorldPlacement) return true;
             __result = Current.DecideNativeAction(__instance); return false;
         }
         static void NativeArrived(AI __instance, ActionControl.ResultInfo __0)
@@ -184,6 +187,8 @@ namespace KK_StoryNPCBridge
         static void NativeActionSelected(SaveData.Heroine __0, ActionControl.ResultInfo __result)
         { if (Current != null && Current.IsOwned(__0) && Current.ownedController == null) Current.RecordNativeSelection(__result); }
         ActionControl.ResultInfo NativeIdle(ActionControl control, ActionControl.ResultInfo previous)
+        { return NativeIdle(control, previous, false); }
+        ActionControl.ResultInfo NativeIdle(ActionControl control, ActionControl.ResultInfo previous, bool preserveDestination)
         {
             var npc = ownedHeroine.charaBase as NPC;
             ActionScene scene = Manager.Game.Instance.actScene;
@@ -202,11 +207,11 @@ namespace KK_StoryNPCBridge
             Vector3 pos = npc != null ? npc.calcPosition : Vector3.zero;
             if (previous != null && previous.point != null)
             {
-                if (ownedReady && ownedMap >= 0) { mapNo = ownedMap; pos = lastNativePosition; }
+                if (!preserveDestination && ownedReady && ownedMap >= 0) { mapNo = ownedMap; pos = lastNativePosition; }
                 else { mapNo = previous.point.MapNo; pos = previous.point.position; }
             }
             idlePoint.MapNo = mapNo; idlePoint.transform.position = pos;
-            idlePoint.transform.rotation = npc != null ? npc.rotation : Quaternion.identity;
+            idlePoint.transform.rotation = preserveDestination && previous != null && previous.point != null ? Quaternion.Euler(previous.point.angle) : npc != null ? npc.rotation : Quaternion.identity;
             AccessTools.Field(typeof(WaitPoint), "_position").SetValue(idlePoint, null);
             AccessTools.Field(typeof(WaitPoint), "_angle").SetValue(idlePoint, null);
             var targets = (IDictionary)AccessTools.Field(typeof(ActionControl), "dicTarget").GetValue(control);
@@ -391,7 +396,7 @@ namespace KK_StoryNPCBridge
             if (text.Length > 1000) throw new BridgeException("invalid_argument", "Text exceeds 1000 characters");
             var list = ADV.Program.Transfer.NewList(false, false);
             list.Add(ADV.Program.Transfer.Create(true, ADV.Command.CharaChange, "-2", "true"));
-            foreach (string page in BeginAdvPages(text)) list.Add(ADV.Program.Transfer.Text("[H名]", page));
+            BeginAdvPages(); AddAdvText(list, "[H名]", text);
             list.Add(ADV.Program.Transfer.Close());
             nativeTextBusy = true;
             try
