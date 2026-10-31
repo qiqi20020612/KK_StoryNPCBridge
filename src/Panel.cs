@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using KKAPI.MainGame;
 using UnityEngine;
 
 namespace KK_StoryNPCBridge
@@ -32,14 +33,14 @@ namespace KK_StoryNPCBridge
             if (cursorAction != null)
             {
                 oldActionCursor = cursorAction.isCursorLock;
-                HarmonyLib.AccessTools.Field(typeof(ActionScene), "_isCursorLock").SetValue(cursorAction, false);
+                cursorAction.SetIsCursorLock(false);
             }
             cursorSaved = true; Cursor.lockState = CursorLockMode.None; Cursor.visible = true;
         }
         void RestoreCursor()
         {
             if (!cursorSaved) return; cursorSaved = false;
-            if (cursorAction != null) HarmonyLib.AccessTools.Field(typeof(ActionScene), "_isCursorLock").SetValue(cursorAction, oldActionCursor);
+            if (cursorAction != null) cursorAction.SetIsCursorLock(oldActionCursor);
             Cursor.lockState = oldLock; Cursor.visible = oldCursorVisible;
         }
         void TogglePanel()

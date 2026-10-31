@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.IO;
 using HarmonyLib;
+using KKAPI.MainGame;
 using UnityEngine;
 using ActionGame;
 using ActionGame.Chara;
@@ -133,12 +134,8 @@ namespace KK_StoryNPCBridge
             if (idlePoint != null) UnityEngine.Object.Destroy(idlePoint.gameObject); idlePoint = null;
             int seat = -1;
             for (int index = 24; index >= 0; index--)
-            {
-                if (index == save.player.schoolClassIndex || index == save.player.schoolClassIndex + 1) continue;
-                bool used = false;
-                foreach (var h in save.heroineList) if (h.schoolClass == save.player.schoolClass && h.schoolClassIndex == index) used = true;
-                if (!used) { seat = index; break; }
-            }
+                if (save.IsValidClassSeat(save.player.schoolClass, index) && save.GetHeroineAtSeat(save.player.schoolClass, index) == null)
+                { seat = index; break; }
             if (seat < 0) throw new InvalidOperationException("No free class slot for the bridge NPC");
             ChaControl template = CreateDefaultFemaleTemplate();
             ChaFileControl card = new ChaFileControl();
@@ -389,29 +386,28 @@ namespace KK_StoryNPCBridge
         }
         object SayNative(string text)
         {
-            TalkScene talk = UnityEngine.Object.FindObjectOfType<TalkScene>();
+            TalkScene talk = GameAPI.GetTalkScene();
             if (talk == null || !ReferenceEquals(talk.targetHeroine, ownedHeroine)) throw new BridgeException("wrong_context", "Open the native conversation with the bridge NPC first");
             if (!NativeTalkReady(talk)) throw new BridgeException("busy", "Wait for the native conversation options");
             ValidateDialogueText(text);
             if (text.Length > 1000) throw new BridgeException("invalid_argument", "Text exceeds 1000 characters");
             var list = ADV.Program.Transfer.NewList(false, false);
-            list.Add(ADV.Program.Transfer.Create(true, ADV.Command.CharaChange, "-2", "true"));
             BeginAdvPages(); AddAdvText(list, "[H名]", text);
             list.Add(ADV.Program.Transfer.Close());
+            var routine = EventUtils.StartTextSceneEvent(talk, list, false, false);
             nativeTextBusy = true;
             try
             {
-                AccessTools.Field(typeof(TalkScene), "isUpdateCamera").SetValue(talk, false);
-                AccessTools.Method(typeof(TalkScene), "StartADV", new Type[] { list.GetType() }, null).Invoke(talk, new object[] { list });
-                StartCoroutine(WaitNativeText());
+                routine.MoveNext(); // StartADV must run here so startup errors still reach the command reply.
+                StartCoroutine(WaitNativeText(routine));
             }
             catch { nativeTextBusy = false; throw; }
             AddEvent("npc_dialogue", Json.Map("speaker", ownedName, "text", text, "channel", "native"));
             return Json.Map("status", "running", "channel", "native_dialogue");
         }
-        IEnumerator WaitNativeText()
+        IEnumerator WaitNativeText(IEnumerator routine)
         {
-            try { yield return null; yield return ADV.Program.Wait("Talk"); AddEvent("native_dialogue_completed", null); }
+            try { do { yield return routine.Current; } while (routine.MoveNext()); AddEvent("native_dialogue_completed", null); }
             finally { nativeTextBusy = false; }
         }
     }

@@ -1,4 +1,4 @@
-param([string]$GameRoot = $env:KOIKATU_GAME_ROOT, [switch]$Deploy)
+param([string]$GameRoot = $env:KOIKATU_GAME_ROOT, [switch]$Deploy, [string]$KkapiPath = '')
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($GameRoot)) { throw 'Specify -GameRoot or set KOIKATU_GAME_ROOT to your Koikatu directory' }
 $GameRoot = (Resolve-Path -LiteralPath $GameRoot).ProviderPath
@@ -13,8 +13,18 @@ if (-not (Test-Path -LiteralPath (Join-Path $managed 'Assembly-CSharp.dll'))) {
 }
 if (-not (Test-Path -LiteralPath (Join-Path $managed 'Assembly-CSharp.dll'))) { throw 'Game Managed directory not found' }
 $core = Join-Path $GameRoot 'BepInEx\core'
+if ([string]::IsNullOrWhiteSpace($KkapiPath)) {
+    $plugins = Join-Path $GameRoot 'BepInEx\plugins'
+    $candidates = @(if (Test-Path -LiteralPath $plugins) { Get-ChildItem -LiteralPath $plugins -Filter 'KKAPI.dll' -File -Recurse })
+    if ($candidates.Count -ne 1) { throw 'Install one official KKAPI 1.48.1 or newer under BepInEx/plugins, or specify -KkapiPath' }
+    $KkapiPath = $candidates[0].FullName
+}
+$KkapiPath = (Resolve-Path -LiteralPath $KkapiPath).ProviderPath
+$kkapiIdentity = [Reflection.AssemblyName]::GetAssemblyName($KkapiPath)
+if ($kkapiIdentity.Name -ne 'KKAPI' -or $kkapiIdentity.Version -lt [Version]'1.48.1.0') { throw 'Requires the official Koikatu KKAPI.dll version 1.48.1 or newer' }
 $references = @('mscorlib.dll','System.dll','System.Core.dll','UnityEngine.dll','UnityEngine.UI.dll','Assembly-CSharp.dll','Assembly-CSharp-firstpass.dll') | ForEach-Object { '/reference:' + (Join-Path $managed $_) }
 $references += @('BepInEx.dll','0Harmony.dll') | ForEach-Object { '/reference:' + (Join-Path $core $_) }
+$references += '/reference:' + $KkapiPath
 $output = Join-Path $outputDirectory 'KK_StoryNPCBridge.dll'
 $sources = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Filter '*.cs' -File | ForEach-Object { $_.FullName })
 & $compiler /nologo /noconfig /utf8output /target:library /optimize+ /nostdlib+ /warn:4 /warnaserror+ ('/out:' + $output) @references @sources

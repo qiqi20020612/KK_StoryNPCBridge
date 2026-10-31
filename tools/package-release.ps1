@@ -17,6 +17,8 @@ if ($assembly.Version.ToString() -ne "$version.0" -or $metadata.FileVersion -ne 
 if ($Tag -and $Tag -cne "v$version") { throw "Tag $Tag does not match plugin version $version" }
 $licensePath = Join-Path $PSScriptRoot '../LICENSE'
 if (-not (Test-Path -LiteralPath $licensePath -PathType Leaf)) { throw 'MIT license file is missing' }
+$dependenciesPath = Join-Path $PSScriptRoot '../docs/DEPENDENCIES.md'
+if (-not (Test-Path -LiteralPath $dependenciesPath -PathType Leaf)) { throw 'Dependency installation instructions are missing' }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $OutputDirectory = (Resolve-Path -LiteralPath $OutputDirectory).ProviderPath
 $dllPath = Join-Path $OutputDirectory 'KK_StoryNPCBridge.dll'
@@ -28,7 +30,8 @@ $archive = [IO.Compression.ZipArchive]::new($stream, [IO.Compression.ZipArchiveM
 try {
     $entries = @(
         @{ Source = $dllPath; Name = 'BepInEx/plugins/KK_StoryNPCBridge.dll' },
-        @{ Source = $licensePath; Name = 'LICENSE' }
+        @{ Source = $licensePath; Name = 'LICENSE' },
+        @{ Source = $dependenciesPath; Name = 'DEPENDENCIES.md' }
     )
     foreach ($item in $entries) {
         $entry = $archive.CreateEntry($item.Name, [IO.Compression.CompressionLevel]::Optimal)

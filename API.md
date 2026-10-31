@@ -559,6 +559,103 @@ Replies and `actor.nativeEvent` contain `executionId`, event reference, `state` 
 
 Lifecycle events are `native_event_requested`, `native_event_started`, `native_event_completed`, `native_event_failed` and `native_event_cancelled`. Completion means the state effect is applied or the dispatched native flow has ended; follow remains active until stopped or handed back to the game. While a scene flow runs, other action/dialogue writes return `native_event_busy`; `set_stats`, `adjust_stats`, observation and release remain available. Cancellation before effect application prevents dispatch; once applied, native execution is allowed to finish and is not rolled back or automatically replayed after reconnecting.
 
+## Read-only H scene reports
+
+Version 2.0.0 adds `status.lastHScene` (also `list` and subscribed snapshots), initially `null`, and `status.hScene`, a short active/settling session summary. No new command or ownership claim is required. Existing protocol 2 and commands are unchanged. The observer never changes attributes, native H flow, AI, dialogue, control or save files.
+
+Lifecycle comes from KKAPI `GameCustomFunctionController.OnStartH/OnEndH(MonoBehaviour,HFlag,bool)`. A session is one native `HSceneProc` start/end pair, with a new 32-hex `sessionId`. A native multi-phase event can create multiple sessions; phases are not silently merged. Native end precedes post-H ADV/results. The observer freezes counts and end state before unload, then reads final attributes after H/HProc/HSceneResult have left the existing scene stack and normal roaming/night state resumes. Free H has no story settlement. An interrupted settlement never reuses attributes from another save/generation.
+
+Events use the existing `AddEvent` sequence and 40-event ring:
+
+| Kind | `data` |
+| --- | --- |
+| `game_h_started` | `sessionId`, `world`, `startedUtc`, `gameTime`, `mode`, `isFreeH`, `bridgeParticipated`, and initial `{slot,actor}` participants. |
+| `game_h_ended` | `sessionId`, `world`, `endedUtc`, `settlement="pending"`; native end was observed, final attributes are not yet available. |
+| `game_h_completed` | The complete report described below; exactly once per observed session, including explicitly aborted/incomplete cases. |
+
+These are **game events**: envelope `target` and `generation` are `null`, including ordinary-NPC scenes. The frozen report `world` and participant identities identify their original context. Only exact native reference equality assigns `bridge:main` and its captured generation. Same names/cards do not establish identity. `lastHScene` is an in-memory latest report, cleared on story/actor-generation changes; it is not a saved history. Clients should persist completed reports by `sessionId` and use `eventSequence` to detect missed events.
+
+### Report envelope, identity and timing
+
+| Fields | Meaning/source/availability |
+| --- | --- |
+| `schema`, `sessionId`, `world`, `bridgeGeneration` | Report schema `1`, unique session, original bridge world, and original generation only when the bridge actually participated. |
+| `state`, `reason`, `nativeEndObserved` | `completed` means KKAPI native end was seen; `aborted` means it was not. Always inspect `settlement.state`; completed does not imply every optional datum exists. Reasons include `normal_story_returned`, `free_h_returned`, `world_changed`, `story_not_resumed`, `next_h_scene_started`, `scene_unloaded_without_end`, `native_flags_changed`, `end_snapshot_failed`, and `plugin_unloaded`. |
+| `startedUtc`, `endedUtc`, `completedUtc` | UTC ISO 8601 observations. Completion can occur later than native end. |
+| `durationSeconds`, `durationScope` | Nonnegative unscaled Unity real time, from KKAPI start to native end (`kkapi_start_to_native_end`) or abnormal-exit detection (`kkapi_start_to_abort_detection`). Excludes load before KKAPI start and post-H results after end; includes pauses/waiting inside that interval. |
+| `gameTimeStart`, `gameTimeEnd` | Existing `gameTime` structure at callbacks, not elapsed H time or a Gregorian game date; end is `null` if unavailable. |
+| `isFreeH`, `vr` | Native `HFlag.isFreeH` and KKAPI's VR argument. The plugin still targets only Koikatu/Party executables; this does not add VR-process support. |
+| `startMode`, `endMode`, `modesObserved` | `{id,nativeName}` from `HFlag.mode`; distinct modes observed at callbacks/native state changes, not a duration histogram. End is `null` without native end. |
+| `playerParticipated`, `bridgeParticipated`, `participantCount` | Nullable native-mode classification, exact bridge reference membership, and observed native actor slots. A context player exists even in independent scenes; it is excluded there. A hidden male model in foreplay does not exclude the participating player. |
+| `hScene` summary | `sessionId`, `world`, `phase="active"` or `"settling"`, `bridgeParticipated`, `startedUtc`, `nativeEndObserved`; `null` without active/pending work. |
+
+Native mode IDs: `-1 none`, `0 aibu` (foreplay), `1 houshi` (service), `2 sonyu` (intercourse), `3 masturbation`, `4 peeping`, `5 lesbian`, `6 houshi3P`, `7 sonyu3P`, `8 houshi3PMMF`, `9 sonyu3PMMF`. Mode/pose availability follows the installed native game and expansions. IDs 8/9 require the corresponding native MMF implementation. Modes 3/4/5 exclude the context player as a participant. Group scenes retain each female slot, the player where involved, and an unresolved second male model where present. No scene-wide counter is assigned to an individual participant. Background roaming animations that never create an HProc/KKAPI H lifecycle do not produce invented H reports.
+
+Each `participants[]` entry has `slot` (`female:0`, `female:1`, `male:0`, `male:1`), `actor`, `firstObservedUtc`, `statsAtStart`, `statsAtNativeEnd`, `statsAfterSettlement`, `deltaAtNativeEnd`, `delta`, `modelAtNativeEnd`, `baselineUnavailableReason`, and `unavailableReason`. Actor fields are `id`, `role`, `name`, `world`, `generation`, `schoolClass`, `schoolClassIndex`, `identitySource`. IDs use existing `bridge:main` / `player:main` / `native:<world>:<roster-index>` only for matching native records. Other records use `h:<sessionId>:<slot>`; an additional male model with no persistent record has role `unresolved_model`, source `model_only`, and `null` attributes. Free-H player copies use `scene_player`, not `player:main`.
+
+`statsAtStart` is the KKAPI-start baseline, including an initially nonparticipating context player who later joins. A previously unseen female joining later has `null` start stats/deltas and `baselineUnavailableReason="participant_joined_after_kkapi_start"`. Arrays are copied. `deltaAtNativeEnd` and `delta` are numeric/array **observed attribute differences**, not inferred event counts; booleans remain in snapshots. Negative score changes are valid. Native saturation can make an attribute difference zero despite additional activity. Other mods may also change attributes during the interval; these are observations, not causal attribution.
+
+| Attribute fields | Source, meaning and native range |
+| --- | --- |
+| Heroine `favor`, `intimacy`, `lewdness`, `anger` | Corresponding `SaveData.Heroine` scores; usual native range 0–100. Read actual values without write-range clamping. |
+| Heroine `hCount` | Cumulative `Heroine.hCount`, native increment capped at 2147483646; not this-scene count. Independent modes do not increment it. |
+| `relation`, `isGirlfriend`, `isKiss`, `isVirgin`, `isAnalVirgin` | Corresponding native relationship/experience states. Relationship IDs follow the existing relationship catalog. |
+| `countNamaInsert`, `countHoushi` | Cumulative qualifying-session counters, capped at 1000 by H end processing; not insertion/action totals within the scene. |
+| `houshiExp`, `countKokanH`, `countAnalH` | Cumulative **experience values**, normally 0–100; despite their names the latter two are not occurrence counts. |
+| `hAreaExps[6]` | Cumulative experience: mouth, breast, genital, anal, buttocks, breast with item; normally 0–100 per slot. |
+| `massageExps[2]` | Cumulative massage experience: genital and breast; normally 0–100 per slot. |
+| Player `hCount`, `orgCount`, `hPeopleCount`, `hentai` | Native `Player.hcount`, `orgCount`, `hPeopleCount` (cumulative, capped at 10000), and perversion score (normally 0–100). The native player orgasm counter is incremented using the game's female-orgasm aggregate; it is not an independent male-climax measure. |
+
+`modelAtNativeEnd` contains `loaded`, `visible`, integer `coordinateType`, copied native `clothesState`, and the existing `expression` structure. It is `null` when a visual model cannot reliably be read; attribute snapshots remain separate.
+
+### Native H statistics
+
+`statistics.source="HFlag.count"`, `scope="native_hproc"`. `atStart` and `atEnd` are detached native count snapshots; `observedDelta` subtracts numeric fields/arrays only from the observed start, not lifetime character statistics. A decreasing/reset counter or an integer counter at its native 10000 cap has `null` delta. `saturatedCounters` lists capped integer fields. Without a native end, `atEnd`, deltas and totals are `null`; last known samples are not relabeled as end data.
+
+All integer fields below are per-HFlag scene counters, incremented with a native cap of **10000**. Zero means the raw field is zero; a mode that does not maintain that counter cannot thereby establish that no activity occurred. Totals for independent modes are explicitly unavailable. Fields overlap: subtype, outcome and simultaneous counters must not be summed as disjoint events.
+
+| Native field(s) | Verified meaning / applicable native path |
+| --- | --- |
+| `aibuOrg` | Female foreplay climax count (`HAibu`). |
+| `kiss`, `notKiss` | Accepted kisses and rejected kiss attempts (`HandCtrl`). |
+| `notPowerful` | Disliked intense stimulation on an inexperienced area (`HAibu.SetDislikes` path). |
+| `dontTouchAnal`, `dontTouchMassage` | Anal-touch and massage refusal reactions (`HandCtrl`). |
+| `houshiOutside`, `houshiInside` | Outside/inside service finishes, maintained by the service controllers, including group variants. |
+| `handFinish`, `nameFinish`, `kuwaeFinish` | Service finish subtype: native `sysTaii` 0 (manual), 1 (licking), or other (mouth-holding). These overlap inside/outside outcomes. |
+| `paizuriFinish`, `paizurinameFinish`, `paizurikuwaeFinish` | Corresponding subtype with native `kindHoushi==2` (breast-service variant); overlap the preceding fields. |
+| `houshiDrink`, `houshiVomit` | Swallow/spit choices after service; not additional finishes. |
+| `splash` | Service outside finishes whose animation has native `isSplash`; not a generic female-climax count. |
+| `sonyuInside`, `sonyuCondomInside`, `sonyuOutside`, `sonyuOrg` | Vaginal-mode unprotected inside finishes, condom inside finishes, outside finishes, female climaxes. |
+| `sonyuSame`, `sonyuCondomSame` | Simultaneous vaginal finishes without/with condom. Native code also increments the corresponding inside counter and `sonyuOrg`; do not add them again. |
+| `sonyuTare` | Native vaginal post-finish dripping transition count; not another ejaculation. |
+| `sonyuAnalInside`, `sonyuAnalCondomInside`, `sonyuAnalOutside`, `sonyuAnalOrg` | Anal counterparts of the four vaginal outcome fields. |
+| `sonyuAnalSame`, `sonyuAnalCondomSame`, `sonyuAnalTare` | Anal simultaneous-finish/dripping counterparts, with the same overlap rule. |
+| `notCondomPlay`, `notAnalPlay` | Refused unprotected/anal requests (`HSprite`); not successful activity counts. |
+| `sonyuKokanPlay`, `sonyuAnalPlay` | Native vaginal/anal insertion-entry counts; maintained by intercourse controllers, including group variants. |
+
+| Other native count fields | Meaning, source and range |
+| --- | --- |
+| `isInsertKokan`, `isInsertAnal` | Whether vaginal/anal insertion happened in this HFlag lifetime, not whether currently inserted. |
+| `isNameInsertKokan`, `isHoushiPlay` | Whether unprotected vaginal insertion / service occurred; native spelling `Name` is preserved. |
+| `isInsertKokanVoiceCondition`, `isInsertAnalVoiceCondition` | Latched native insertion voice-condition flags; not extra activity counts. |
+| `selectMassages[2]` | Native experience accumulators for genital/breast massage, capped at 30 each; not counts or seconds. |
+| `selectAreas[6]` | Experience accumulation by mouth, breast, genital, anal, buttocks, breast-with-item; capped at 1000 each. Inputs include elapsed click stimulation and drag distance, so units are native experience points. |
+| `selectAreasGlobal[6]` | Parallel area accumulators capped at `float.MaxValue`; native ranking uses these. Same areas and units; not lifetime character totals. |
+| `selectHobby` | Native item-use accumulator (`SetSelectHobby` adds input × 0.01), capped at `float.MaxValue`; not an item-use count. |
+| `mouseActions[]` | Sparse true cells from native `mouseAction[item,area]`: `{item,area,click,drag}`. Item index 0–9, area index 0–6 = mouth, left/right breast, genital, anal, left/right buttock. Flags record whether click/drag ever occurred, not frequency. An empty list means no set cells; `null` means the native matrix is absent. |
+
+`nativeOrgasmTotal` matches `HFlag.GetOrgCount()` = `aibuOrg + sonyuOrg + sonyuAnalOrg`. `nativeFinishTotal` matches `GetInsideAndOutsideCount()` = service inside/outside plus vaginal/anal inside (with/without condom) and outside counters. These sum capped component fields (maximum 30000 / 80000 respectively), not uncapped event totals or per-person counts. Both are `null` with `nativeTotalsUnavailableReason="not_counted_in_independent_modes"` for purely solo/lesbian/peeping sessions. Other reasons are `native_end_not_observed` and `native_count_unavailable`. No male-climax, per-female-climax or offscreen autonomous-event total is invented.
+
+### State observations and final state
+
+The only additional H Harmony patch observes successful `HActionBase.SetPlay` calls; it is **not a lifecycle hook**. `observations` contains `source`, `scope="after_kkapi_start"`, `stateTransitions`, `initialState`, `lastState`, `initialClimaxInProgress`, nullable `masturbationClimaxEntries` and `lesbianClimaxEntries`, and `perParticipant=null`. It counts distinct entries into native `Orgasm` in modes 3/5, verified in `HMasturbation`/`HLesbian`; repeated calls with the same state are deduplicated. These are observed animation-state entries, not fictional increments to HFlag counters or individually assigned orgasms. `initialClimaxInProgress` means the initial state is exactly `Orgasm`; other substates remain in `initialState`. Already-running climax and activity before KKAPI start cannot be reconstructed. There is no per-frame full-object scan or unlimited transition history.
+
+`nativeEndState` has mode; native female/male gauges (0–100, shared scene values); `isCondom`, `isAnalPlay`; `{id,nativeName}` `finishKind` (current native finish selector, not a history); `isHSceneEnd`, `numEnd` (internal end route at callback, before caller advances it); `immediateFinish`; `animationState`; current animation `{id,mode,name}`; native `finishADV`; and `pendingExperience={aibus[5],houshi,sonyus[2]}` from `HSceneProc.addParameter`. Pending values precede result-screen/config multipliers and clamping; use final participant deltas for actual attribute changes. Missing/nonfinite values are `null`.
+
+`settlement={state,reason,scope,sampledUtc}` uses `final` after normal story return, `not_applicable` for free H, and `unavailable` on interruption/context change. Its scope is `observed_attribute_changes`. Free-H or interrupted sessions keep final attributes/deltas `null`. A new native phase before settlement completes the older report with unavailable settlement rather than attributing later phases' rewards to it. Reports are immutable after completion. Reports are not persisted: process termination can lose them, and a crash/kill before callbacks can prevent completion delivery.
+
+Complete synthetic JSON example (test data, not a recorded player session): [h-scene-report.json](docs/examples/h-scene-report.json). The observer is read-only; existing H activity commands are unchanged and are not part of this reporting API.
+
 ## Development helpers and limits
 
 `Development.AllowGameCommands` gates `game.*` helpers: story load, map changes, story advancement/continuation, screenshots, save-export probes, native menu/pointer probes and native body interaction probes. `game.map` accepts a returned map object/key/ID but changes the player map and is a development tool, not the NPC walking interface.

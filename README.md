@@ -23,6 +23,7 @@ These targeting modes are planned features, not capabilities of the current vers
 ## Features
 
 - Read player names, native game periods, weekdays and explicit day-ending/day-start events.
+- Observe H participants, all native counters, end state and settled attribute changes, including independent and group NPC scenes; expose reports through `game_h_*` events and `lastHScene`.
 - Preserve native stage-based placement and clothing initialization while controlled, then hold at the new native destination and report the interrupted tasks and relocation result.
 - Read and modify native scores, relationships, club membership and promised-date flags in any scene, with actual native results returned.
 - Adjust numeric attributes by signed deltas, clamp to native ranges and return before/actual values; stable mutation IDs prevent duplicate application on retries.
@@ -52,13 +53,18 @@ Production integrations use API replies and events. In-game UI is limited to an 
 - The original Japanese Windows release of Koikatu, or Koikatsu Party.
 - Koikatsu Party requires purchasing the After Party DLC and installing the patch from the official website before using this plugin.
 - BepInEx 5.
+- Official [KKAPI / KK_ModdingAPI](https://github.com/IllusionMods/IllusionModdingAPI/releases/tag/v1.48.1) 1.48.1 or newer, including its ExtensibleSaveFormat dependency from [BepisPlugins](https://github.com/IllusionMods/BepisPlugins/releases).
 - Python 3 for the optional standard-library client.
 
-KKAPI and CheatTools are not required. Game files and BepInEx binaries are not included.
+KKAPI is a required dependency; CheatTools is not required. Game files and third-party DLLs are not included. See [dependency details](docs/DEPENDENCIES.md).
+
+2.0.0 introduces the required KKAPI dependency and read-only H reports. Bridge protocol 2 and existing commands remain compatible. See the [2.0.0 notes](docs/releases/2.0.0.md) and [H field reference](API.md#read-only-h-scene-reports).
 
 ## Installation
 
-Download `KK_StoryNPCBridge.dll` from [Releases](https://github.com/qiqi20020612/KK_StoryNPCBridge/releases/latest). The ZIP contains the same DLL in its installation path and the MIT license; it can be extracted into the game directory. `SHA256SUMS.txt` provides checksums for both downloads.
+Install the official **KK** Modding API package and its dependencies first (not the KKS, AI or HS2 packages). Keep one `KKAPI.dll` under `BepInEx/plugins`, preserving the official archive's directory structure. BepInEx checks the hard dependency `marco.kkapi >= 1.48.1` and loads KKAPI before the bridge; it skips the bridge if KKAPI is missing or too old.
+
+Download builds from [Releases](https://github.com/qiqi20020612/KK_StoryNPCBridge/releases/latest). The ZIP contains the bridge DLL in its installation path, the MIT license and dependency instructions; it can be extracted into the game directory. `SHA256SUMS.txt` provides checksums for the DLL and ZIP.
 
 Copy the single plugin DLL directly into the game's plugin directory:
 
@@ -146,15 +152,20 @@ Install the .NET SDK selected by `global.json`, then run:
 ```powershell
 dotnet restore KK_StoryNPCBridge.csproj --locked-mode
 dotnet build KK_StoryNPCBridge.csproj --no-restore --configuration Release --output artifacts/build
+dotnet run --project tests/KK_StoryNPCBridge.Tests.csproj --configuration Release
 ```
 
 The output is `artifacts/build/KK_StoryNPCBridge.dll`, targeting .NET Framework 3.5. This build uses public, stripped compile-time references from [IllusionLibs](https://github.com/IllusionMods/IllusionLibs) and does not require a local game installation. Dependencies and their content hashes are recorded in `packages.lock.json`; reference assemblies are not bundled with the plugin.
 
+`NuGet.Config` supplies nuget.org, the official IllusionMods feed (including the pinned `IllusionModdingAPI.KKAPI` 1.48.1 package), and the BepInEx feed required by KKAPI's transitive build packages. Upstream analyzers are excluded from compilation to preserve this project's existing compiler-only checks; C# 3, net35 and warnings-as-errors remain enabled. The installation ZIP includes `DEPENDENCIES.md` and never includes KKAPI or other dependency DLLs.
+
 To create the release DLL, installation ZIP and SHA-256 checksums:
 
 ```powershell
-pwsh -File tools/package-release.ps1 -Tag v1.5.0
+pwsh -File tools/package-release.ps1 -Tag v2.0.0
 ```
+
+Report tests execute the production module with data-only native doubles for lifecycle deduplication, identity isolation and snapshots; they do not replace in-game acceptance.
 
 GitHub Actions builds pushes and pull requests. Pushing a `v<version>` tag builds and publishes a release after checking that the tag matches the DLL version.
 
@@ -171,6 +182,10 @@ The output is `bin/KK_StoryNPCBridge.dll`. To copy it into the game, close the g
 ```
 
 `KOIKATU_GAME_ROOT` can supply the game directory instead of the parameter. Build outputs and runtime configuration are excluded from version control.
+
+The local compiler script finds `KKAPI.dll` recursively under the game's `BepInEx/plugins` and checks its assembly identity/version. For a separate official reference DLL, pass `-KkapiPath "<path-to-KKAPI.dll>"`. `-Deploy` copies only the bridge DLL; install KKAPI separately.
+
+The [migration assessment](docs/KKAPI-MIGRATION.md) records the replacements, retained hooks and integration validation scope.
 
 ## Behavior and limitations
 

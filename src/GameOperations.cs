@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using BepInEx;
+using KKAPI.MainGame;
 using UnityEngine;
 
 namespace KK_StoryNPCBridge
@@ -17,7 +18,7 @@ namespace KK_StoryNPCBridge
             if (op == "game.native_menu") return ReadNativeMenu();
             if (op == "game.native_touch_probe")
             {
-                TalkScene talk = UnityEngine.Object.FindObjectOfType<TalkScene>();
+                TalkScene talk = GameAPI.GetTalkScene();
                 if (talk == null || talk.targetHeroine != ownedHeroine || !NativeInputReady(talk)) throw new BridgeException("wrong_context", "Requires the bridge NPC's native conversation menu");
                 string kind = OptionalText(command, "kind", "touch");
                 if (kind != "touch" && kind != "look") throw new BridgeException("invalid_argument", "kind must be touch or look");
@@ -35,7 +36,7 @@ namespace KK_StoryNPCBridge
             }
             if (op == "game.talk_status")
             {
-                TalkScene talk = UnityEngine.Object.FindObjectOfType<TalkScene>();
+                TalkScene talk = GameAPI.GetTalkScene();
                 return Json.Map("ownedTarget", talk != null && ReferenceEquals(talk.targetHeroine, ownedHeroine), "ready", NativeTalkReady(talk));
             }
             if (op == "game.save_probe")
@@ -51,7 +52,7 @@ namespace KK_StoryNPCBridge
             }
             if (op == "game.talk_end")
             {
-                TalkScene talk = UnityEngine.Object.FindObjectOfType<TalkScene>();
+                TalkScene talk = GameAPI.GetTalkScene();
                 if (talk == null || talk.targetHeroine != ownedHeroine) throw new BridgeException("wrong_context", "No native conversation with the bridge NPC");
                 var button = HarmonyLib.AccessTools.Field(typeof(TalkScene), "buttonEnd").GetValue(talk) as UnityEngine.UI.Button;
                 if (button == null || !button.interactable || !button.gameObject.activeInHierarchy) throw new BridgeException("not_ready", "Continue the introduction before ending conversation");

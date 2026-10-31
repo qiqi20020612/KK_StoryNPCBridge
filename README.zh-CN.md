@@ -23,6 +23,7 @@
 ## 功能
 
 - 提供玩家名字、原生游戏时间段、星期，以及明确的日终／新一天事件。
+- 只读采集 H 场景参与者、完整原生统计、结束状态及结算后属性变化，支持普通 NPC 的独立／多人场景；通过 `game_h_*` 事件与 `lastHScene` 提供报告。
 - 受控期间保留原生阶段的位置和穿着初始化，随后在新落点等待，并上报任务中断及重定位结果。
 - 在任意场景读取和修改原生数值、关系、社团成员和约会约定等状态，返回实际读取结果。
 - 按有符号增量调整数值属性，限制到原生范围并返回前后实际值；稳定的修改 ID 防止重试时重复应用。
@@ -52,13 +53,18 @@
 - Windows 日版原版 Koikatu，或 Koikatsu Party。
 - Koikatsu Party 需购买 After Party DLC，并安装官网补丁后才可使用本插件。
 - BepInEx 5。
+- 官方 [KKAPI / KK_ModdingAPI](https://github.com/IllusionMods/IllusionModdingAPI/releases/tag/v1.48.1) 1.48.1 或更新版本，以及其必需的 [BepisPlugins](https://github.com/IllusionMods/BepisPlugins/releases) 中的 ExtensibleSaveFormat。
 - 使用可选客户端时需要 Python 3，无额外 Python 依赖。
 
-不要求安装 KKAPI 或 CheatTools。项目不包含游戏文件或 BepInEx 二进制文件。
+KKAPI 为必需依赖，CheatTools 仍非必需。项目不包含游戏文件或第三方 DLL，详见[依赖说明](docs/DEPENDENCIES.md)。
+
+2.0.0 引入 KKAPI 必需依赖和只读 H 场景报告；Bridge 协议仍为 2，原有命令保持兼容。详见 [2.0.0 说明](docs/releases/2.0.0.zh-CN.md)及 [H 场景字段文档](API.zh-CN.md#只读-h-场景报告)。
 
 ## 安装
 
-从 [Releases](https://github.com/qiqi20020612/KK_StoryNPCBridge/releases/latest) 下载 `KK_StoryNPCBridge.dll`。ZIP 内包含相同 DLL 的安装目录结构和 MIT 许可证，可直接解压到游戏目录。`SHA256SUMS.txt` 提供 DLL 和 ZIP 的校验值。
+请先安装官方 **KK** Modding API 安装包及其依赖，不要使用 KKS、AI 或 HS2 版。按官方压缩包保留目录结构，并确保 `BepInEx/plugins` 下只有一份 `KKAPI.dll`。BepInEx 根据硬依赖 `marco.kkapi >= 1.48.1` 先加载 KKAPI；缺失或版本过低时会跳过 Bridge。
+
+从 [Releases](https://github.com/qiqi20020612/KK_StoryNPCBridge/releases/latest) 下载。ZIP 包含 Bridge DLL 的安装目录结构、MIT 许可证及依赖说明，可直接解压到游戏目录。`SHA256SUMS.txt` 提供 DLL 和 ZIP 的校验值。
 
 将单个 DLL 直接放入游戏的插件目录：
 
@@ -146,15 +152,20 @@ with BridgeClient(game_root="<Koikatu 游戏目录>") as bridge:
 ```powershell
 dotnet restore KK_StoryNPCBridge.csproj --locked-mode
 dotnet build KK_StoryNPCBridge.csproj --no-restore --configuration Release --output artifacts/build
+dotnet run --project tests/KK_StoryNPCBridge.Tests.csproj --configuration Release
 ```
 
 输出为 `artifacts/build/KK_StoryNPCBridge.dll`，目标框架为 .NET Framework 3.5。此方式使用 [IllusionLibs](https://github.com/IllusionMods/IllusionLibs) 提供的公开精简编译引用，无需本机游戏目录。依赖版本及内容哈希记录在 `packages.lock.json` 中，插件发布包不包含引用程序集。
 
+`NuGet.Config` 提供 nuget.org、官方 IllusionMods 源（包含锁定的 `IllusionModdingAPI.KKAPI` 1.48.1 包），以及其传递构建依赖需要的 BepInEx 源。构建排除上游附带的分析器，维持现有编译器检查规则；仍启用 C# 3、net35 和警告视为错误。安装 ZIP 附带 `DEPENDENCIES.md`，不包含 KKAPI 或其他依赖 DLL。
+
 生成发布 DLL、安装 ZIP 和 SHA-256 校验文件：
 
 ```powershell
-pwsh -File tools/package-release.ps1 -Tag v1.5.0
+pwsh -File tools/package-release.ps1 -Tag v2.0.0
 ```
+
+报告测试使用真实生产模块和数据替身，验证生命周期去重、身份隔离及快照，不能代替游戏内验收。
 
 GitHub Actions 会在代码推送和拉取请求时构建。推送 `v<版本号>` 标签后，会在核对标签与 DLL 版本一致后构建并发布 Release。
 
@@ -171,6 +182,10 @@ GitHub Actions 会在代码推送和拉取请求时构建。推送 `v<版本号>
 ```
 
 也可通过 `KOIKATU_GAME_ROOT` 提供游戏目录。构建产物和运行时配置不进入版本控制。
+
+本机编译脚本会递归查找游戏 `BepInEx/plugins` 下的 `KKAPI.dll`，并检查程序集标识与版本。使用单独的官方引用 DLL 时可传入 `-KkapiPath "<KKAPI.dll 路径>"`。`-Deploy` 仅复制 Bridge DLL，KKAPI 需要单独安装。
+
+[迁移评估（英文）](docs/KKAPI-MIGRATION.md) 记录了实际替换、保留的 Hook 和集成验证范围。
 
 ## 行为与限制
 

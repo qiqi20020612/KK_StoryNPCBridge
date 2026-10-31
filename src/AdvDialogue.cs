@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
+using KKAPI.MainGame;
 using UnityEngine;
 
 namespace KK_StoryNPCBridge
@@ -214,7 +215,6 @@ namespace KK_StoryNPCBridge
             }
             SetDialoguePhase(speaker == "npc" && text.Length > 0 ? "npc_speaking" : speaker == "player" ? "user_speaking" : heldAfter == "awaiting_input" ? "opening" : "waiting_model");
             var list = ADV.Program.Transfer.NewList(false, false);
-            list.Add(ADV.Program.Transfer.Create(true, ADV.Command.CharaChange, "-2", "true"));
             if (text.Length > 0)
             {
                 try { BeginAdvPages(); AddAdvText(list, speaker == "player" ? Manager.Game.Instance.saveData.player.Name : "[H名]", text); }
@@ -228,15 +228,15 @@ namespace KK_StoryNPCBridge
         }
         void StartManagedAdvTransfer(List<ADV.Program.Transfer> list)
         {
-            AccessTools.Field(typeof(TalkScene), "isUpdateCamera").SetValue(currentTalk, false);
-            AccessTools.Method(typeof(TalkScene), "StartADV", new Type[] { list.GetType() }, null).Invoke(currentTalk, new object[] { list });
-            StartCoroutine(WaitManagedAdvLine(dialogueId));
+            var routine = EventUtils.StartTextSceneEvent(currentTalk, list, false, false);
+            routine.MoveNext(); // Preserve synchronous startup and the bridge's own hold/recovery timing.
+            StartCoroutine(WaitManagedAdvLine(dialogueId, routine));
         }
-        IEnumerator WaitManagedAdvLine(string id)
+        IEnumerator WaitManagedAdvLine(string id, IEnumerator routine)
         {
             while (id == dialogueId && !releaseAdvHold) yield return null;
             if (id != dialogueId) yield break;
-            yield return null; yield return ADV.Program.Wait("Talk");
+            do { yield return routine.Current; } while (routine.MoveNext());
             if (id != dialogueId) yield break;
             advLineActive = false; managedWait = null;
         }

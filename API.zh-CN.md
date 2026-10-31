@@ -559,6 +559,103 @@ execution = bridge.request('trigger_native_event', event=event, **p)
 
 生命周期事件为 `native_event_requested`、`native_event_started`、`native_event_completed`、`native_event_failed`、`native_event_cancelled`。完成表示状态效果已应用，或派发的原生流程已结束；跟随仍持续到停止或交还游戏。场景流程期间其他动作／对话写入返回 `native_event_busy`；`set_stats`、`adjust_stats`、观测、释放控制仍可使用。效果应用前可取消派发；应用后允许原生流程完成，不回滚，也不在重连后自动重放。
 
+## 只读 H 场景报告
+
+2.0.0 在 `status`、`list` 和订阅快照中增加 `lastHScene`（初始为 `null`）及活动／等待结算摘要 `hScene`。不新增命令，不需要接管角色。协议仍为 2，现有命令不变；采集器不修改属性、H 流程、AI、对话、控制权或存档。
+
+生命周期使用 KKAPI 的 `GameCustomFunctionController.OnStartH/OnEndH(MonoBehaviour,HFlag,bool)`。一次 session 对应一个原生 `HSceneProc` 开始／结束周期，生成独立的 32 位十六进制 `sessionId`；原生连续事件可能包含多个周期，不会擅自合并。结束回调早于后续 ADV／结果界面：先在对象卸载前冻结统计和结束状态，等现有场景栈中的 H/HProc/HSceneResult 全部退出且恢复漫游／夜间状态后，再读取最终属性。自由 H 没有剧情结算；结算中断时不会借用其他存档／generation 的属性。
+
+事件沿用 `AddEvent` 的序号和最近 40 条事件队列：
+
+| kind | data |
+| --- | --- |
+| `game_h_started` | `sessionId`、`world`、`startedUtc`、`gameTime`、`mode`、`isFreeH`、`bridgeParticipated` 和初始 `{slot,actor}` 参与者。 |
+| `game_h_ended` | `sessionId`、`world`、`endedUtc`、`settlement="pending"`；已收到原生结束，最终属性尚不可用。 |
+| `game_h_completed` | 下述完整报告；每个已观测 session 只发一次，包含明确标识的异常退出／结算不完整情况。 |
+
+它们都是**游戏事件**，外层 `target`、`generation` 为 `null`，普通 NPC 场景也不会伪装成 Bridge 事件。报告中的冻结 `world` 和参与者身份保留原始上下文。仅原生对象引用完全相同才关联 `bridge:main` 及其开始时的 generation；同名或同一角色卡不构成身份证据。`lastHScene` 仅在内存保留最近报告，切换故事或角色 generation 时清空，不是存档历史。客户端应按 `sessionId` 保存副本，并用 `eventSequence` 判断事件是否遗漏。
+
+### 报告外层、身份和时间
+
+| 字段 | 含义／来源／可用性 |
+| --- | --- |
+| `schema`、`sessionId`、`world`、`bridgeGeneration` | 报告结构版本 `1`、唯一场次、开始时的 Bridge world；仅桥接角色实际参与时提供原 generation。 |
+| `state`、`reason`、`nativeEndObserved` | `completed` 表示收到 KKAPI 原生结束；`aborted` 表示未收到。还须检查 `settlement.state`，不能把 completed 当成所有可选数据均可用。原因包括 `normal_story_returned`、`free_h_returned`、`world_changed`、`story_not_resumed`、`next_h_scene_started`、`scene_unloaded_without_end`、`native_flags_changed`、`end_snapshot_failed`、`plugin_unloaded`。 |
+| `startedUtc`、`endedUtc`、`completedUtc` | UTC ISO 8601 观测时间，报告完成时间可能晚于原生结束时间。 |
+| `durationSeconds`、`durationScope` | Unity 不受 timeScale 影响的真实时间差，下限 0；范围为 KKAPI 开始到原生结束 `kkapi_start_to_native_end`，或异常退出被发现 `kkapi_start_to_abort_detection`。不包含开始回调前加载和结束后的结果界面，包含此区间内的暂停／等待。 |
+| `gameTimeStart`、`gameTimeEnd` | 回调时现有 `gameTime` 结构；不是 H 持续时间或游戏公历日期。无法获取结束时间时为 `null`。 |
+| `isFreeH`、`vr` | 原生 `HFlag.isFreeH` 及 KKAPI 的 VR 参数。插件仍仅加载于 Koikatu／Party 主程序，并未增加 VR 进程支持。 |
+| `startMode`、`endMode`、`modesObserved` | `HFlag.mode` 的 `{id,nativeName}`；记录回调／原生状态变化时观测到的不同模式，不统计每种模式的持续时长。缺少原生结束时 endMode 为 `null`。 |
+| `playerParticipated`、`bridgeParticipated`、`participantCount` | 可空的原生模式参与判断、严格引用匹配的桥接角色参与标志、观测到的原生角色槽位数。独立场景中的上下文 player 不等于参与者；前戏中男方模型隐藏也不等于玩家没参与。 |
+| `hScene` 摘要 | `sessionId`、`world`、`phase="active"` 或 `"settling"`、`bridgeParticipated`、`startedUtc`、`nativeEndObserved`；没有活动／待结算场景时为 `null`。 |
+
+原生模式编号：`-1 none`；`0 aibu` 前戏；`1 houshi` 侍奉；`2 sonyu` 插入；`3 masturbation` 独自行为；`4 peeping` 窥视；`5 lesbian` 女性之间；`6 houshi3P`、`7 sonyu3P`、`8 houshi3PMMF`、`9 sonyu3PMMF` 为原生多人模式。模式／姿势是否可用取决于安装的原生游戏与扩展；8／9 需要对应的原生 MMF 实现。3／4／5 排除上下文玩家。多人场景分别记录女性槽位、参与的玩家和存在时的第二男性模型；不能把场景总计分摊给某个人。没有创建 HProc、没有 KKAPI H 生命周期的后台漫游动作不会被编造为完整 H 报告。
+
+`participants[]` 包含 `slot`（`female:0`、`female:1`、`male:0`、`male:1`）、`actor`、`firstObservedUtc`、`statsAtStart`、`statsAtNativeEnd`、`statsAfterSettlement`、`deltaAtNativeEnd`、`delta`、`modelAtNativeEnd`、`baselineUnavailableReason`、`unavailableReason`。actor 包含 `id`、`role`、`name`、`world`、`generation`、`schoolClass`、`schoolClassIndex`、`identitySource`。仅匹配真实记录时使用现有 `bridge:main`、`player:main`、`native:<world>:<roster-index>`；其他记录使用 `h:<sessionId>:<slot>`。没有持久角色记录的第二男性模型为 `unresolved_model`／`model_only`，属性为 `null`；自由 H 玩家副本使用 `scene_player`，不冒充 `player:main`。
+
+`statsAtStart` 是 KKAPI 开始时的基线，包括开始时尚未参与、之后才加入的上下文玩家。之后才首次发现的女性角色，其开始属性／差值为 `null`，`baselineUnavailableReason="participant_joined_after_kkapi_start"`。数组会复制。`deltaAtNativeEnd`、`delta` 是数值／数组的**实际观测属性差**，不是推算的事件次数；布尔状态保留在快照中。分数下降可得到负差值；累计属性触顶后，即使发生了活动，属性差也可能为 0。其他插件也可能在此区间修改属性，因此不声称所有变化必然由本场景单独造成。
+
+| 属性字段 | 来源、含义及原生范围 |
+| --- | --- |
+| 女性 `favor`、`intimacy`、`lewdness`、`anger` | 对应 `SaveData.Heroine` 分数，通常为 0–100；直接读取实际值，不按写入范围截断。 |
+| 女性 `hCount` | 累计 `Heroine.hCount`，原生递增上限 2147483646，不是本场次数；独立模式不增加。 |
+| `relation`、`isGirlfriend`、`isKiss`、`isVirgin`、`isAnalVirgin` | 对应原生关系／经历状态，relation 编号沿用现有关系目录。 |
+| `countNamaInsert`、`countHoushi` | 原生结束处理中增加、上限 1000 的累计符合条件场次数，不是本场插入／动作总数。 |
+| `houshiExp`、`countKokanH`、`countAnalH` | 累计**经验值**，通常为 0–100；后两项虽然名称包含 count，也不是发生次数。 |
+| `hAreaExps[6]` | 累计部位经验：口、胸、生殖部位、肛门、臀部、道具作用于胸部；每项通常 0–100。 |
+| `massageExps[2]` | 累计按摩经验：生殖部位、胸部；每项通常 0–100。 |
+| 玩家 `hCount`、`orgCount`、`hPeopleCount`、`hentai` | 原生 `Player.hcount`、`orgCount`、`hPeopleCount`（累计，上限 10000）以及变态度（通常 0–100）。玩家 orgCount 使用游戏女性高潮聚合值递增，并非独立的男性高潮测量。 |
+
+`modelAtNativeEnd` 包含 `loaded`、`visible`、整数 `coordinateType`、复制的原生 `clothesState` 和现有 `expression` 结构。模型无法可靠读取时为 `null`，不会因此丢弃独立的属性快照。
+
+### 原生 H 统计
+
+`statistics.source="HFlag.count"`，`scope="native_hproc"`。`atStart`／`atEnd` 为脱离游戏对象的计数快照；`observedDelta` 仅计算数值及数组从已观测基线到结束的差，不使用角色终身累计值代替本场统计。计数下降／重置，或整数计数达到原生 10000 上限时，对应差值为 `null`；`saturatedCounters` 列出已触顶字段。缺少原生结束时，atEnd、差值和聚合值均为 `null`，不会把最后一次过程观测冒充结束数据。
+
+下表所有整数都是 HFlag 生命周期内、原生递增上限 **10000** 的计数。原始字段为 0，不代表不维护该字段的模式里什么都没发生；纯独立模式的聚合值会明确不可用。这些字段有重叠，不能把子类型、结果和同时完成计数当成互斥事件相加。
+
+| 原生字段 | 已核实含义／适用原生路径 |
+| --- | --- |
+| `aibuOrg` | 女性前戏高潮次数（`HAibu`）。 |
+| `kiss`、`notKiss` | 接受接吻、拒绝接吻尝试（`HandCtrl`）。 |
+| `notPowerful` | 对未熟悉部位的强刺激反感计数（`HAibu.SetDislikes` 路径）。 |
+| `dontTouchAnal`、`dontTouchMassage` | 肛门触碰、按摩拒绝反应（`HandCtrl`）。 |
+| `houshiOutside`、`houshiInside` | 侍奉中的外部／内部完成计数，由对应控制器及多人变体维护。 |
+| `handFinish`、`nameFinish`、`kuwaeFinish` | 侍奉完成子类型：原生 `sysTaii` 为 0（手部）、1（舔舐）、其他（含入口中）。与内／外部结果重叠。 |
+| `paizuriFinish`、`paizurinameFinish`、`paizurikuwaeFinish` | 上述对应子类型且原生 `kindHoushi==2` 的胸部侍奉变体，与前述字段重叠。 |
+| `houshiDrink`、`houshiVomit` | 侍奉完成后的吞下／吐出选项次数，不是额外完成次数。 |
+| `splash` | 动画带原生 `isSplash` 标志的侍奉外部完成，不是通用女性高潮数。 |
+| `sonyuInside`、`sonyuCondomInside`、`sonyuOutside`、`sonyuOrg` | 阴道模式下的无保护内部完成、有保护内部完成、外部完成、女性高潮。 |
+| `sonyuSame`、`sonyuCondomSame` | 无／有保护的同时完成；原生还会增加对应内部完成及 sonyuOrg，不要重复加总。 |
+| `sonyuTare` | 原生阴道完成后的流出过渡次数，不是另一次射精。 |
+| `sonyuAnalInside`、`sonyuAnalCondomInside`、`sonyuAnalOutside`、`sonyuAnalOrg` | 上述四项的肛门模式对应计数。 |
+| `sonyuAnalSame`、`sonyuAnalCondomSame`、`sonyuAnalTare` | 肛门同时完成／流出对应计数，重叠规则相同。 |
+| `notCondomPlay`、`notAnalPlay` | 拒绝无保护／肛门请求（`HSprite`），不是成功行为次数。 |
+| `sonyuKokanPlay`、`sonyuAnalPlay` | 阴道／肛门插入进入计数，由对应插入控制器及多人变体维护。 |
+
+| 其他原生字段 | 含义、来源及范围 |
+| --- | --- |
+| `isInsertKokan`、`isInsertAnal` | 此 HFlag 生命周期是否发生过对应插入，不是当前是否仍插入。 |
+| `isNameInsertKokan`、`isHoushiPlay` | 是否发生过无保护阴道插入／侍奉，保留原生 Name 拼写。 |
+| `isInsertKokanVoiceCondition`、`isInsertAnalVoiceCondition` | 原生插入语音条件锁存标志，不是额外行为次数。 |
+| `selectMassages[2]` | 生殖部位／胸部按摩经验积累，每项上限 30，不是次数或秒数。 |
+| `selectAreas[6]` | 口、胸、生殖部位、肛门、臀部、道具作用于胸部的经验积累，每项上限 1000；输入包括点击刺激持续时间、拖动距离，单位为原生经验点。 |
+| `selectAreasGlobal[6]` | 用于原生排名的并行部位积累，上限 float.MaxValue，部位及单位相同；不是角色终身累计。 |
+| `selectHobby` | `SetSelectHobby` 按输入 × 0.01 积累的原生道具值，上限 float.MaxValue，不是道具使用次数。 |
+| `mouseActions[]` | 原生 `mouseAction[item,area]` 为真的稀疏单元：`{item,area,click,drag}`。item 下标 0–9；area 下标 0–6 为口、左／右胸、生殖部位、肛门、左／右臀。布尔值仅表示是否发生过点击／拖动，不记录频次。空数组表示没有置位单元，null 表示原生矩阵缺失。 |
+
+`nativeOrgasmTotal` 对应 `HFlag.GetOrgCount()`：`aibuOrg + sonyuOrg + sonyuAnalOrg`。`nativeFinishTotal` 对应 `GetInsideAndOutsideCount()`：侍奉内／外部，加阴道／肛门有／无保护内部和外部完成。它们是有上限分量的原生求和（最大分别为 30000／80000），不是无上限事件总数或逐人计数。纯独自／女性之间／窥视场景两项均为 `null`，`nativeTotalsUnavailableReason="not_counted_in_independent_modes"`；其他原因包括 `native_end_not_observed`、`native_count_unavailable`。不会编造男性高潮、逐女性高潮或后台独立事件的总数。
+
+### 状态观测与结束状态
+
+唯一新增 H Harmony 补丁只观测成功的 `HActionBase.SetPlay`，**不是生命周期 Hook**。`observations` 包含 source、`scope="after_kkapi_start"`、`stateTransitions`、`initialState`、`lastState`、`initialClimaxInProgress`、可空的 `masturbationClimaxEntries`、`lesbianClimaxEntries` 及 `perParticipant=null`。在已核实的 `HMasturbation`／`HLesbian` 路径中，分别统计模式 3／5 进入原生 `Orgasm` 状态的次数；同一状态的重复调用去重。这是实际观测到的动画状态进入次数，不是伪造的 HFlag 计数，也不分配给某个角色。`initialClimaxInProgress` 仅表示初始状态恰为 `Orgasm`，其他子状态保留在 `initialState`。开始时已处于高潮或开始回调前的活动无法还原。不做每帧全量扫描，不保存无限状态历史。
+
+`nativeEndState` 包含模式、原生女性／男性计量（0–100，场景共享值）、`isCondom`、`isAnalPlay`、`finishKind={id,nativeName}`（当前原生完成选择，不是历史）、`isHSceneEnd`、`numEnd`（回调时的内部结束路由，调用者尚未推进）、`immediateFinish`、`animationState`、当前动画 `{id,mode,name}`、原生 `finishADV`，以及 `HSceneProc.addParameter` 的 `pendingExperience={aibus[5],houshi,sonyus[2]}`。pending 值尚未应用结果界面／配置倍率和截断，实际属性变化以参与者最终差值为准。缺失或非有限数值为 null。
+
+`settlement={state,reason,scope,sampledUtc}`：恢复正常剧情后为 `final`，自由 H 为 `not_applicable`，中断／上下文变化为 `unavailable`；scope 为 `observed_attribute_changes`。自由 H／中断场景的最终属性与差值保留 null。结算前进入下一原生阶段时，上一报告以结算不可用结束，不将后续阶段奖励归给它。报告完成后不再修改。报告不持久化；进程退出可能丢失内存数据，回调前崩溃／kill 也无法保证送达完成事件。
+
+完整合成 JSON 示例（测试数据，并非玩家实录）：[h-scene-report.json](docs/examples/h-scene-report.json)。采集器为只读，现有 H 活动命令不变，也不属于本报告接口。
+
 ## 开发辅助功能与限制
 
 

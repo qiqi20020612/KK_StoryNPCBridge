@@ -35,16 +35,59 @@
         "resolved": "5.6.2.4",
         "contentHash": "hvtsnz1TVnL1P36dr5spCfsx/aQfLY/WS5sm8dFHw2sA2YkK1So+QUIOvW3YouoFeub9WKooz3vSJk28Ui2PDQ=="
       },
+      "IllusionModdingAPI.KKAPI": {
+        "type": "Direct",
+        "requested": "[1.48.1, 1.48.1]",
+        "resolved": "1.48.1",
+        "contentHash": "IfGMJmZbQQrYPzSwwjJA/9simkFfb30Y6VJtEfjhbVnqVWwXCSgu/K//ffhSvFwi3DlZMqTF9LvNZScW+qpGfg==",
+        "dependencies": {
+          "BepInEx.Analyzers": "1.0.4",
+          "ExtensibleSaveFormat.Koikatu": "19.4.0",
+          "IllusionLibs.BepInEx": "5.4.22",
+          "IllusionLibs.Koikatu.Assembly-CSharp": "2019.4.27.4",
+          "IllusionLibs.Koikatu.Assembly-CSharp-firstpass": "2019.4.27.4",
+          "IllusionLibs.Koikatu.TextMeshPro": "2019.4.27.4",
+          "IllusionLibs.Koikatu.UnityEngine": "5.6.2.4",
+          "IllusionLibs.Koikatu.UnityEngine.UI": "5.6.2.4",
+          "KoikatuCompatibilityAnalyzer": "1.1.0",
+          "Microsoft.Unity.Analyzers": "1.25.0"
+        }
+      },
       "Microsoft.NETFramework.ReferenceAssemblies.net35": {
         "type": "Direct",
         "requested": "[1.0.3, )",
         "resolved": "1.0.3",
         "contentHash": "Mhbr13IGgsW4AHj50uAiVNMPWdvUPWePRsI4x1NiTkhHUc4rqi9XvY5xxBC4d56bJypQbxAZ8bPuZIpz+TjBVQ=="
       },
+      "BepInEx.Analyzers": {
+        "type": "Transitive",
+        "resolved": "1.0.4",
+        "contentHash": "0nkhl3b1EIb7dqNXzvpRCGbhk9zBAFrf586VYh9k92HxPzV32EM5zcx9PVy+ntZx2O8kCimnfYFaOPdgzwc/Dg=="
+      },
+      "ExtensibleSaveFormat.Koikatu": {
+        "type": "Transitive",
+        "resolved": "19.4.0",
+        "contentHash": "jookfrrgvGU8hC180U/cnSfQquITf+fypcqoVX27bSIp8OqJaRILbDufjictgNQwtVmBKvlgNIG7047HPtrrEQ=="
+      },
       "IllusionLibs.BepInEx.Harmony": {
         "type": "Transitive",
         "resolved": "2.9.0",
         "contentHash": "z06STa3b51Aa+Y0WO7vjuthKc7vo6+wjs5zVnu7yPGlKDqkHxLZ1i7RAz5tI9hPOYfiqtjwFe9XWB84kstQitQ=="
+      },
+      "IllusionLibs.Koikatu.TextMeshPro": {
+        "type": "Transitive",
+        "resolved": "2019.4.27.4",
+        "contentHash": "PwZtU99TwFIfBZSiTB61TqsyPLex8w05I0d+JInZgTxQaCpFCgCyoIamjFRwh96VRBvlKq3q5R+PNeUCdGfn7w=="
+      },
+      "KoikatuCompatibilityAnalyzer": {
+        "type": "Transitive",
+        "resolved": "1.1.0",
+        "contentHash": "TQLjPsAjr+j/vQXcZyWhHB2Cr7w5ytl+u1rfcMVJHvwIh37IAfh62yeEF+iJDxVfV7z5WbPHBXrnq8Jn43jwow=="
+      },
+      "Microsoft.Unity.Analyzers": {
+        "type": "Transitive",
+        "resolved": "1.25.0",
+        "contentHash": "jOclVb2PVoOdKafuzt3bJ3BHkbjsfuAx+60yqP4zCAhlNa1rwn1Jt05qrmqJgmBY42S08hXbps9KA6QR2Z7aOA=="
       }
     }
   }

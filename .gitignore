@@ -1,5 +1,7 @@
 /bin/
 /obj/
+/tests/bin/
+/tests/obj/
 /artifacts/
 /local/
 /.private/

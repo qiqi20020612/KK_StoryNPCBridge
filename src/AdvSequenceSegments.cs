@@ -71,7 +71,6 @@ namespace KK_StoryNPCBridge
             if (run.Operation == "play_adv_motion") run.MotionSnapshot = CaptureAdvMotionAnimator();
             BeginAdvPages();
             var list = ADV.Program.Transfer.NewList(false, false);
-            list.Add(ADV.Program.Transfer.Create(true, ADV.Command.CharaChange, "-2", "true"));
             for (int i = 0; i < run.Segments.Count; i++)
             {
                 var segment = run.Segments[i]; string index = (i + 1).ToString(CultureInfo.InvariantCulture);

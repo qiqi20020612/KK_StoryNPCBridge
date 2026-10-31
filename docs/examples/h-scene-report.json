@@ -1,0 +1,567 @@
+{
+  "schema": 1,
+  "sessionId": "1234567890abcdef1234567890abcdef",
+  "world": "example-world",
+  "bridgeGeneration": "example-generation",
+  "state": "completed",
+  "reason": "normal_story_returned",
+  "nativeEndObserved": true,
+  "startedUtc": "2026-11-01T12:00:00.0000000Z",
+  "endedUtc": "2026-11-01T12:00:15.0000000Z",
+  "completedUtc": "2026-11-01T12:00:20.0000000Z",
+  "durationSeconds": 15,
+  "durationScope": "kkapi_start_to_native_end",
+  "gameTimeStart": {
+    "available": true,
+    "stage": {
+      "id": 5,
+      "key": "lunch_time",
+      "name": "Lunch",
+      "nativeName": "LunchTime",
+      "description": "Exact native story cycle phase; period groups these stages under the native time UI."
+    },
+    "period": {
+      "id": 1,
+      "key": "midday",
+      "name": "Lunch / afternoon classes",
+      "description": "Native TimeUIControl time-zone index; stage gives the exact native cycle phase."
+    },
+    "day": {
+      "id": "example-world:1",
+      "observedDayIndex": 1,
+      "weekday": {
+        "id": 2,
+        "key": "wednesday",
+        "name": "Wednesday",
+        "nativeName": "Wednesday",
+        "isWeekend": false,
+        "description": "Native weekday index, Monday through Sunday/holiday; this is not an absolute calendar date."
+      },
+      "calendarDate": null,
+      "dateSource": "native_weekday_with_observed_day_counter",
+      "isDayEnding": false,
+      "isNewDay": false
+    },
+    "timerSeconds": 1,
+    "description": "The game exposes a weekday and cycle stages, not a Gregorian date. observedDayIndex counts observed native calendar advances in this save profile."
+  },
+  "gameTimeEnd": {
+    "available": true,
+    "stage": {
+      "id": 5,
+      "key": "lunch_time",
+      "name": "Lunch",
+      "nativeName": "LunchTime",
+      "description": "Exact native story cycle phase; period groups these stages under the native time UI."
+    },
+    "period": {
+      "id": 1,
+      "key": "midday",
+      "name": "Lunch / afternoon classes",
+      "description": "Native TimeUIControl time-zone index; stage gives the exact native cycle phase."
+    },
+    "day": {
+      "id": "example-world:1",
+      "observedDayIndex": 1,
+      "weekday": {
+        "id": 2,
+        "key": "wednesday",
+        "name": "Wednesday",
+        "nativeName": "Wednesday",
+        "isWeekend": false,
+        "description": "Native weekday index, Monday through Sunday/holiday; this is not an absolute calendar date."
+      },
+      "calendarDate": null,
+      "dateSource": "native_weekday_with_observed_day_counter",
+      "isDayEnding": false,
+      "isNewDay": false
+    },
+    "timerSeconds": 1,
+    "description": "The game exposes a weekday and cycle stages, not a Gregorian date. observedDayIndex counts observed native calendar advances in this save profile."
+  },
+  "isFreeH": false,
+  "vr": false,
+  "startMode": {
+    "id": 2,
+    "nativeName": "sonyu"
+  },
+  "endMode": {
+    "id": 2,
+    "nativeName": "sonyu"
+  },
+  "modesObserved": [
+    {
+      "id": 2,
+      "nativeName": "sonyu"
+    }
+  ],
+  "playerParticipated": true,
+  "bridgeParticipated": true,
+  "participantCount": 2,
+  "participants": [
+    {
+      "slot": "female:0",
+      "actor": {
+        "id": "bridge:main",
+        "role": "bridge",
+        "name": "Bridge NPC",
+        "world": "example-world",
+        "generation": "example-generation",
+        "schoolClass": 1,
+        "schoolClassIndex": 24,
+        "identitySource": "native_reference"
+      },
+      "firstObservedUtc": "2026-11-01T12:00:00.0000000Z",
+      "statsAtStart": {
+        "favor": 20,
+        "intimacy": 0,
+        "lewdness": 0,
+        "anger": 0,
+        "hCount": 40,
+        "relation": 0,
+        "isGirlfriend": false,
+        "isKiss": false,
+        "isVirgin": true,
+        "isAnalVirgin": true,
+        "countNamaInsert": 0,
+        "countHoushi": 0,
+        "houshiExp": 0,
+        "countKokanH": 0,
+        "countAnalH": 0,
+        "hAreaExps": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "massageExps": [
+          0,
+          0
+        ]
+      },
+      "statsAtNativeEnd": {
+        "favor": 20,
+        "intimacy": 0,
+        "lewdness": 0,
+        "anger": 0,
+        "hCount": 41,
+        "relation": 0,
+        "isGirlfriend": false,
+        "isKiss": false,
+        "isVirgin": false,
+        "isAnalVirgin": true,
+        "countNamaInsert": 1,
+        "countHoushi": 0,
+        "houshiExp": 0,
+        "countKokanH": 0,
+        "countAnalH": 0,
+        "hAreaExps": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "massageExps": [
+          0,
+          0
+        ]
+      },
+      "statsAfterSettlement": {
+        "favor": 27,
+        "intimacy": 0,
+        "lewdness": 4,
+        "anger": 0,
+        "hCount": 41,
+        "relation": 0,
+        "isGirlfriend": false,
+        "isKiss": false,
+        "isVirgin": false,
+        "isAnalVirgin": true,
+        "countNamaInsert": 1,
+        "countHoushi": 0,
+        "houshiExp": 0,
+        "countKokanH": 0,
+        "countAnalH": 0,
+        "hAreaExps": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "massageExps": [
+          0,
+          0
+        ]
+      },
+      "baselineUnavailableReason": null,
+      "deltaAtNativeEnd": {
+        "favor": 0,
+        "intimacy": 0,
+        "lewdness": 0,
+        "anger": 0,
+        "hCount": 1,
+        "relation": 0,
+        "countNamaInsert": 1,
+        "countHoushi": 0,
+        "houshiExp": 0,
+        "countKokanH": 0,
+        "countAnalH": 0,
+        "hAreaExps": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "massageExps": [
+          0,
+          0
+        ]
+      },
+      "delta": {
+        "favor": 7,
+        "intimacy": 0,
+        "lewdness": 4,
+        "anger": 0,
+        "hCount": 1,
+        "relation": 0,
+        "countNamaInsert": 1,
+        "countHoushi": 0,
+        "houshiExp": 0,
+        "countKokanH": 0,
+        "countAnalH": 0,
+        "hAreaExps": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "massageExps": [
+          0,
+          0
+        ]
+      },
+      "modelAtNativeEnd": null,
+      "unavailableReason": null
+    },
+    {
+      "slot": "male:0",
+      "actor": {
+        "id": "player:main",
+        "role": "player",
+        "name": "Player",
+        "world": "example-world",
+        "generation": null,
+        "schoolClass": 1,
+        "schoolClassIndex": 0,
+        "identitySource": "native_reference"
+      },
+      "firstObservedUtc": "2026-11-01T12:00:00.0000000Z",
+      "statsAtStart": {
+        "hCount": 0,
+        "orgCount": 0,
+        "hPeopleCount": 0,
+        "hentai": 0
+      },
+      "statsAtNativeEnd": {
+        "hCount": 1,
+        "orgCount": 1,
+        "hPeopleCount": 1,
+        "hentai": 0
+      },
+      "statsAfterSettlement": {
+        "hCount": 1,
+        "orgCount": 1,
+        "hPeopleCount": 1,
+        "hentai": 0
+      },
+      "baselineUnavailableReason": null,
+      "deltaAtNativeEnd": {
+        "hCount": 1,
+        "orgCount": 1,
+        "hPeopleCount": 1,
+        "hentai": 0
+      },
+      "delta": {
+        "hCount": 1,
+        "orgCount": 1,
+        "hPeopleCount": 1,
+        "hentai": 0
+      },
+      "modelAtNativeEnd": null,
+      "unavailableReason": null
+    }
+  ],
+  "statistics": {
+    "source": "HFlag.count",
+    "scope": "native_hproc",
+    "atStart": {
+      "aibuOrg": 0,
+      "kiss": 0,
+      "notKiss": 0,
+      "notPowerful": 0,
+      "dontTouchAnal": 0,
+      "dontTouchMassage": 0,
+      "houshiOutside": 0,
+      "houshiInside": 0,
+      "handFinish": 0,
+      "nameFinish": 0,
+      "kuwaeFinish": 0,
+      "paizuriFinish": 0,
+      "paizurinameFinish": 0,
+      "paizurikuwaeFinish": 0,
+      "houshiDrink": 0,
+      "houshiVomit": 0,
+      "splash": 0,
+      "sonyuCondomInside": 0,
+      "sonyuOrg": 0,
+      "sonyuInside": 2,
+      "sonyuOutside": 0,
+      "sonyuSame": 0,
+      "sonyuCondomSame": 0,
+      "sonyuTare": 0,
+      "sonyuAnalCondomInside": 0,
+      "sonyuAnalOrg": 0,
+      "sonyuAnalInside": 0,
+      "sonyuAnalOutside": 0,
+      "sonyuAnalSame": 0,
+      "sonyuAnalCondomSame": 0,
+      "sonyuAnalTare": 0,
+      "notCondomPlay": 0,
+      "notAnalPlay": 0,
+      "sonyuKokanPlay": 0,
+      "sonyuAnalPlay": 0,
+      "isInsertKokan": false,
+      "isInsertAnal": false,
+      "isNameInsertKokan": false,
+      "isHoushiPlay": false,
+      "isInsertKokanVoiceCondition": false,
+      "isInsertAnalVoiceCondition": false,
+      "selectMassages": [
+        0,
+        0
+      ],
+      "selectAreas": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "selectAreasGlobal": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "selectHobby": 0,
+      "mouseActions": []
+    },
+    "atEnd": {
+      "aibuOrg": 0,
+      "kiss": 0,
+      "notKiss": 0,
+      "notPowerful": 0,
+      "dontTouchAnal": 0,
+      "dontTouchMassage": 0,
+      "houshiOutside": 0,
+      "houshiInside": 0,
+      "handFinish": 0,
+      "nameFinish": 0,
+      "kuwaeFinish": 0,
+      "paizuriFinish": 0,
+      "paizurinameFinish": 0,
+      "paizurikuwaeFinish": 0,
+      "houshiDrink": 0,
+      "houshiVomit": 0,
+      "splash": 0,
+      "sonyuCondomInside": 0,
+      "sonyuOrg": 1,
+      "sonyuInside": 3,
+      "sonyuOutside": 0,
+      "sonyuSame": 0,
+      "sonyuCondomSame": 0,
+      "sonyuTare": 0,
+      "sonyuAnalCondomInside": 0,
+      "sonyuAnalOrg": 0,
+      "sonyuAnalInside": 0,
+      "sonyuAnalOutside": 0,
+      "sonyuAnalSame": 0,
+      "sonyuAnalCondomSame": 0,
+      "sonyuAnalTare": 0,
+      "notCondomPlay": 0,
+      "notAnalPlay": 0,
+      "sonyuKokanPlay": 0,
+      "sonyuAnalPlay": 0,
+      "isInsertKokan": false,
+      "isInsertAnal": false,
+      "isNameInsertKokan": false,
+      "isHoushiPlay": false,
+      "isInsertKokanVoiceCondition": false,
+      "isInsertAnalVoiceCondition": false,
+      "selectMassages": [
+        0,
+        0
+      ],
+      "selectAreas": [
+        0,
+        4,
+        0,
+        0,
+        0,
+        0
+      ],
+      "selectAreasGlobal": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "selectHobby": 0,
+      "mouseActions": [
+        {
+          "item": 0,
+          "area": 1,
+          "click": true,
+          "drag": false
+        }
+      ]
+    },
+    "observedDelta": {
+      "aibuOrg": 0,
+      "kiss": 0,
+      "notKiss": 0,
+      "notPowerful": 0,
+      "dontTouchAnal": 0,
+      "dontTouchMassage": 0,
+      "houshiOutside": 0,
+      "houshiInside": 0,
+      "handFinish": 0,
+      "nameFinish": 0,
+      "kuwaeFinish": 0,
+      "paizuriFinish": 0,
+      "paizurinameFinish": 0,
+      "paizurikuwaeFinish": 0,
+      "houshiDrink": 0,
+      "houshiVomit": 0,
+      "splash": 0,
+      "sonyuCondomInside": 0,
+      "sonyuOrg": 1,
+      "sonyuInside": 1,
+      "sonyuOutside": 0,
+      "sonyuSame": 0,
+      "sonyuCondomSame": 0,
+      "sonyuTare": 0,
+      "sonyuAnalCondomInside": 0,
+      "sonyuAnalOrg": 0,
+      "sonyuAnalInside": 0,
+      "sonyuAnalOutside": 0,
+      "sonyuAnalSame": 0,
+      "sonyuAnalCondomSame": 0,
+      "sonyuAnalTare": 0,
+      "notCondomPlay": 0,
+      "notAnalPlay": 0,
+      "sonyuKokanPlay": 0,
+      "sonyuAnalPlay": 0,
+      "selectMassages": [
+        0,
+        0
+      ],
+      "selectAreas": [
+        0,
+        4,
+        0,
+        0,
+        0,
+        0
+      ],
+      "selectAreasGlobal": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "selectHobby": 0
+    },
+    "nativeOrgasmTotal": 1,
+    "nativeFinishTotal": 3,
+    "nativeTotalsUnavailableReason": null,
+    "saturatedCounters": [],
+    "perParticipant": null,
+    "perParticipantUnavailableReason": "native_counters_are_scene_aggregate"
+  },
+  "observations": {
+    "source": "HActionBase.SetPlay",
+    "scope": "after_kkapi_start",
+    "stateTransitions": 0,
+    "masturbationClimaxEntries": null,
+    "lesbianClimaxEntries": null,
+    "initialState": "WLoop",
+    "initialClimaxInProgress": false,
+    "lastState": "WLoop",
+    "perParticipant": null
+  },
+  "nativeEndState": {
+    "mode": {
+      "id": 2,
+      "nativeName": "sonyu"
+    },
+    "gaugeFemale": 0,
+    "gaugeMale": 0,
+    "isCondom": false,
+    "isAnalPlay": false,
+    "finishKind": {
+      "id": 0,
+      "nativeName": "none"
+    },
+    "isHSceneEnd": true,
+    "numEnd": 0,
+    "immediateFinish": false,
+    "animationState": "WLoop",
+    "animation": {
+      "id": 0,
+      "mode": {
+        "id": 0,
+        "nativeName": "aibu"
+      },
+      "name": "Native animation"
+    },
+    "finishADV": 0,
+    "pendingExperience": {
+      "aibus": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "houshi": 0,
+      "sonyus": [
+        0,
+        0
+      ]
+    }
+  },
+  "settlement": {
+    "state": "final",
+    "reason": "normal_story_returned",
+    "scope": "observed_attribute_changes",
+    "sampledUtc": "2026-11-01T12:00:20.0000000Z"
+  }
+}

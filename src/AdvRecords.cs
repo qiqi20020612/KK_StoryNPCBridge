@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using HarmonyLib;
+using KKAPI.MainGame;
 using UnityEngine;
 
 namespace KK_StoryNPCBridge
@@ -99,7 +100,7 @@ namespace KK_StoryNPCBridge
             if (recordingCommand == null || string.IsNullOrEmpty(text) || ownedHeroine == null) return;
             var scenario = AccessTools.Property(typeof(ADV.CommandBase), "scenario").GetValue(recordingCommand, null) as ADV.TextScenario;
             if (scenario == null || scenario.textController != controller) return;
-            var talk = UnityEngine.Object.FindObjectOfType<TalkScene>();
+            var talk = GameAPI.GetTalkScene();
             var people = new List<SaveData.CharaData>();
             if (scenario.heroineList != null) foreach (var heroine in scenario.heroineList) AddAdvParticipant(people, heroine);
             if (scenario.commandController != null)

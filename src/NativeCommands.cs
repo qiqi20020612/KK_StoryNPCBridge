@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using HarmonyLib;
+using KKAPI.MainGame;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -136,7 +137,7 @@ namespace KK_StoryNPCBridge
         }
         object ReadNativeMenu()
         {
-            TalkScene talk = UnityEngine.Object.FindObjectOfType<TalkScene>();
+            TalkScene talk = GameAPI.GetTalkScene();
             ADV.TextScenario activeAdv = null;
             if (talk != null) foreach (ADV.TextScenario scenario in UnityEngine.Object.FindObjectsOfType<ADV.TextScenario>())
                 if (scenario.heroineList != null && scenario.heroineList.Contains(talk.targetHeroine)) { activeAdv = scenario; break; }

@@ -4,6 +4,8 @@ using System.Reflection;
 using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
+using KKAPI;
+using KKAPI.MainGame;
 using UnityEngine;
 
 namespace KK_StoryNPCBridge
@@ -15,11 +17,12 @@ namespace KK_StoryNPCBridge
     }
 
     [BepInPlugin(PluginGuid, PluginName, Version)]
+    [BepInDependency(KoikatuAPI.GUID, "1.48.1")]
     [BepInProcess("Koikatu.exe")]
     [BepInProcess("Koikatsu Party.exe")]
     public sealed partial class Plugin : BaseUnityPlugin
     {
-        public const string Version = "1.5.0";
+        public const string Version = "2.0.0";
         public const string PluginGuid = "KK_StoryNPCBridge";
         public const string PluginName = "KK_StoryNPCBridge";
         public const int Protocol = 2;
@@ -60,6 +63,9 @@ namespace KK_StoryNPCBridge
                 harmony.Patch(AccessTools.Method(typeof(TextController), "Set", new Type[] { typeof(string), typeof(string) }, null), null,
                     new HarmonyMethod(typeof(Plugin).GetMethod("TextSetPostfix", BindingFlags.Static | BindingFlags.NonPublic)), null, null, null);
                 InstallNativeHooks(); InstallDialogueHooks(); InstallAdvInputHooks(); InstallNativeCommandHooks(); InstallTimeHooks(); InitializeControlRecovery(); InstallAdvRecordHooks(); InstallNativeEventHooks(); InstallAdvSequenceHooks(); InstallExpressionHooks();
+                GameAPI.RegisterExtraBehaviour<HSceneReportController>(null);
+                hSceneReports = (HSceneReportController)GameAPI.GetRegisteredBehaviour(typeof(HSceneReportController));
+                PatchNative(typeof(HActionBase), "SetPlay", new Type[] { typeof(string), typeof(bool) }, null, "HSceneAnimationChanged", null);
                 Logger.LogInfo(PluginName + " " + Version + " dedicated actor " + ActorId + "; 127.0.0.1:" + port + "; " + panelShortcut);
             }
             catch (Exception e) { Logger.LogError(e); if (server != null) server.Dispose(); server = null; }
@@ -108,7 +114,7 @@ namespace KK_StoryNPCBridge
         }
         void OnDestroy()
         {
-            try { DestroyOwnedActor("plugin_unloaded"); RestoreCursor(); }
+            try { if (hSceneReports != null) hSceneReports.StopObserving(); DestroyOwnedActor("plugin_unloaded"); RestoreCursor(); }
             finally
             {
                 if (server != null) server.Dispose();
@@ -125,12 +131,12 @@ namespace KK_StoryNPCBridge
             if (Time.realtimeSinceStartup >= nextContextScan)
             {
                 nightMenu = UnityEngine.Object.FindObjectOfType<ActionGame.NightMainMenu>();
-                currentTalk = UnityEngine.Object.FindObjectOfType<TalkScene>();
+                currentTalk = GameAPI.GetTalkScene();
                 nextContextScan = Time.realtimeSinceStartup + 0.2f;
             }
             Manager.Game game = Manager.Game.IsInstance() ? Manager.Game.Instance : null;
             SaveData save = game != null ? game.saveData : null;
-            ActionScene nextAction = game != null ? game.actScene : null;
+            ActionScene nextAction = GameAPI.GetActionScene();
             int nextMap = nextAction != null && nextAction.Map != null ? nextAction.Map.no : -1;
             bool newSave = !ReferenceEquals(previousSave, save);
             if (newSave || nextAction != action || nextMap != map)
@@ -140,11 +146,13 @@ namespace KK_StoryNPCBridge
             }
             if (newSave)
             {
+                if (hSceneReports != null) hSceneReports.WorldChanged();
                 if (ownedSave != save) { ReleaseOwned("world_changed", false); ClearControlRecovery(); observedCycle = null; }
                 previousSave = save; world = Guid.NewGuid().ToString("N").Substring(0, 12);
                 AddEvent("world_changed", Json.Map("world", world));
             }
             action = nextAction; map = nextMap;
+            if (hSceneReports != null) hSceneReports.WorldRefreshed();
         }
         bool SceneBusy { get { return Manager.Scene.IsInstance() && Manager.Scene.Instance.IsNowLoadingFade; } }
         string Mode
@@ -164,6 +172,7 @@ namespace KK_StoryNPCBridge
             return Json.Map("pluginName", PluginName, "pluginGuid", PluginGuid, "protocol", Protocol, "version", Version, "world", world, "mode", Mode, "map", map, "sceneBusy", SceneBusy,
                 "utc", DateTime.UtcNow.ToString("o"), "clients", server.ClientCount, "descriptionLanguage", "en", "uiLanguage", uiLanguage.Value,
                 "player", ReadPlayer(), "gameTime", ReadGameTime(),
+                "hScene", hSceneReports == null ? null : hSceneReports.Status(), "lastHScene", hSceneReports == null ? null : hSceneReports.Last,
                 "panelVisible", panelVisible, "panelShortcut", panelShortcut.ToString(), "actors", actors,
                 "nativeRosterCount", Manager.Game.IsInstance() && Manager.Game.Instance.HeroineList != null ? Manager.Game.Instance.HeroineList.Count : 0,
                 "nativeNpcCount", action != null && action.npcList != null ? action.npcList.Count : 0,

@@ -30,6 +30,8 @@ jobs:
         run: dotnet restore KK_StoryNPCBridge.csproj --locked-mode
       - name: Build plugin
         run: dotnet build KK_StoryNPCBridge.csproj --no-restore --configuration Release --output artifacts/build
+      - name: Test H report lifecycle and snapshots
+        run: dotnet run --project tests/KK_StoryNPCBridge.Tests.csproj --configuration Release
       - name: Validate and package
         id: package
         shell: pwsh

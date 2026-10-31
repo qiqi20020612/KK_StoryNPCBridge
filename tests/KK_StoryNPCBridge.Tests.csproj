@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>CS0649</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="NativeStubs.cs" />
+    <Compile Include="HSceneReportsTests.cs" />
+    <Compile Include="../src/HSceneReports.cs" Link="HSceneReports.cs" />
+    <Compile Include="../src/Json.cs" Link="Json.cs" />
+  </ItemGroup>
+</Project>
